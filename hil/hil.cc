@@ -167,7 +167,6 @@ void HIL::isc_get(Request &hReq) {
       }
 
       pr("startSlet done         -----------------------------------------");
-      tick += applyLatency(CPU::ISC__RUNTIME, CPU::ISC__START_SLET);
     }
     else if (ISC_SUBCMD_IS(slba, ISC_SUBCMD_SLET_RES))
       ;  // nothing to do here, just add latency
