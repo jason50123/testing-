@@ -52,6 +52,7 @@ CQEntryWrapper::_CQEntryWrapper(SQEntryWrapper &sqew) {
   entry.dword2.sqHead = sqew.sqHead;
   entry.dword2.sqID = sqew.sqID;
   entry.dword3.commandID = sqew.entry.dword0.commandID;
+  sqSubmitTick = sqew.submitTick;
 }
 
 void CQEntryWrapper::makeStatus(bool dnr, bool more, STATUS_CODE_TYPE sct,

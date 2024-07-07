@@ -25,11 +25,56 @@
 #include "hil/nvme/controller.hh"
 #include "util/algorithm.hh"
 
+#include <unordered_map>
+#include "util/b64.hh"
+
 namespace SimpleSSD {
 
 namespace HIL {
 
 namespace NVMe {
+
+// the time info is a little bit later than the real request submit time, cuz
+// the source time is HIL submit time (when the device got the data + some
+// latency), not the real host submit time
+struct ISC_REQUEST_INFO {
+  uint64_t sec;
+  uint64_t ns;
+
+  ISC_REQUEST_INFO(uint64_t tick) {
+    sec = tick / 1000000000000ULL;
+    ns = tick % 1000000000000ULL;
+  }
+};
+
+#define ISC_RECORD_FMT "ISC_RECORD: %lu.%lu S%c 0x%012lx + 0x%lx %s\n"
+
+// FIXME: getTick value may not be unique when there are multiple hil cores
+std::unordered_map<uint64_t, ISC_REQUEST_INFO> tobeRecorded;
+
+static inline void isc_record(char type, void *ioCtx, size_t lbaSize) {
+  auto ioc = (IOContext *)ioCtx;
+  auto todo = tobeRecorded.find(ioc->resp.sqSubmitTick);
+  assert(todo != tobeRecorded.end());
+  auto time = todo->second;
+
+  size_t isz = ioc->nlb * lbaSize;
+  size_t oszExpect = (isz + 2) / 3 * 4;
+
+  char *data = (char *)calloc(1, oszExpect + 1 /* ensure null terminated */);
+  if (type == 'S') {
+    size_t osz;
+    char *obuf;
+    encode((char *)ioc->buffer, isz, &obuf, &osz);
+    memcpy(data, obuf, oszExpect);
+    free(obuf);
+  }
+
+  printf(ISC_RECORD_FMT, time.sec, time.ns, type, ioc->slba, ioc->nlb, data);
+  tobeRecorded.erase(todo);
+
+  free(data);
+}
 
 const uint32_t nLBAFormat = 4;
 const uint32_t lbaFormat[nLBAFormat] = {
@@ -327,6 +372,12 @@ void Subsystem::submitCommand(SQEntryWrapper &req, RequestFunction func) {
 
   commandCount++;
 
+  auto opcode = req.entry.dword0.opcode;
+  if (req.sqID && (opcode == OPCODE_ISC_GET || opcode == OPCODE_ISC_SET)) {
+    req.submitTick = getTick();
+    tobeRecorded.insert({req.submitTick, ISC_REQUEST_INFO(req.submitTick)});
+  }
+
   // Admin command
   if (req.sqID == 0) {
     switch (req.entry.dword0.opcode) {
@@ -451,8 +502,10 @@ void Subsystem::read(Namespace *ns, uint64_t slba, uint64_t nlblk,
 void Subsystem::isc_get(Namespace *ns, uint64_t slba, uint64_t nlblk,
                         DMAFunction &dmaDone, void *ioCtx) {
   Request *hReq = new Request(dmaDone, ioCtx);
-  DMAFunction doISC = [this](uint64_t, void *hReq) {
-    pHIL->isc_get(*(Request *)hReq);
+  DMAFunction doISC = [this, ns](uint64_t, void *hReq) {
+    auto h = (Request *)hReq;
+    pHIL->isc_get(*h);
+    isc_record('G', (IOContext *)h->context, ns->getInfo()->lbaSize);
     delete (Request *)hReq;
   };
 
@@ -464,8 +517,10 @@ void Subsystem::isc_get(Namespace *ns, uint64_t slba, uint64_t nlblk,
 void Subsystem::isc_set(Namespace *ns, uint64_t slba, uint64_t nlblk,
                         DMAFunction &dmaDone, void *ioCtx) {
   Request *hReq = new Request(dmaDone, ioCtx);
-  DMAFunction doISC = [this](uint64_t, void *hReq) {
-    pHIL->isc_set(*(Request *)hReq);
+  DMAFunction doISC = [this, ns](uint64_t, void *hReq) {
+    auto h = (Request *)hReq;
+    pHIL->isc_set(*h);
+    isc_record('S', (IOContext *)h->context, ns->getInfo()->lbaSize);
     delete (Request *)hReq;
   };
   convertUnit(ns, slba, nlblk, *hReq);

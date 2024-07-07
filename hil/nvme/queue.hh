@@ -77,6 +77,7 @@ typedef union _CQEntry {
 
 typedef struct _SQEntryWrapper {
   SQEntry entry;
+  uint64_t submitTick;
 
   uint16_t sqID;
   uint16_t cqID;
@@ -90,6 +91,7 @@ typedef struct _SQEntryWrapper {
 
 typedef struct _CQEntryWrapper {
   CQEntry entry;
+  uint64_t sqSubmitTick;
 
   uint64_t submitAt;
 

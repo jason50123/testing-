@@ -173,6 +173,7 @@ set(SRC_SIM
   sim/state.cc
 )
 set(SRC_UTIL
+  util/b64.cc
   util/bitset.cc
   util/def.cc
   util/disk.cc
