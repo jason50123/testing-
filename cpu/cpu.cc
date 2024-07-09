@@ -63,6 +63,7 @@ constexpr const char *NS2STR[] = {
     enum2str(ISC__SLET),
     enum2str(ISC__SLET__GREP),
     enum2str(ISC__SLET__LISTDIR),
+    enum2str(ISC__SLET__STATDIR),
     enum2str(TOTAL_NAMESPACES),
 };
 
@@ -127,18 +128,20 @@ constexpr const char *FCT2STR[] = {
     enum2str(ISC__ADD_SLET__EXT4),
     enum2str(ISC__ADD_SLET__GREP),
     enum2str(ISC__ADD_SLET__LISTDIR),
+    enum2str(ISC__ADD_SLET__STATDIR),
     enum2str(TOTAL_FUNCTIONS),
 };
 
 CHECK_NS2STR(ISC__RUNTIME);
 CHECK_NS2STR(ISC__FSA);
 CHECK_NS2STR(ISC__SLET);
-CHECK_NS2STR(ISC__SLET__GREP);
+CHECK_NS2STR(ISC__SLET__GREP);     // slet start
+CHECK_NS2STR(ISC__SLET__STATDIR);  // slet end
 CHECK_NS2STR(TOTAL_NAMESPACES);
-CHECK_FCT2STR(ISC__INIT);            // FSA start
-CHECK_FCT2STR(ISC__NAMEI);           // FSA end
-CHECK_FCT2STR(ISC__START_SLET);      // runtime start
-CHECK_FCT2STR(ISC__ADD_SLET__LISTDIR);  // runtime end
+CHECK_FCT2STR(ISC__INIT);               // FSA start
+CHECK_FCT2STR(ISC__NAMEI);              // FSA end
+CHECK_FCT2STR(ISC__START_SLET);         // runtime start
+CHECK_FCT2STR(ISC__ADD_SLET__STATDIR);  // runtime end
 CHECK_FCT2STR(TOTAL_FUNCTIONS);
 
 InstStat::_InstStat()
@@ -422,17 +425,20 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.insert({ISC__SLET, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET__GREP, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET__LISTDIR, std::unordered_map<uint16_t, InstStat>()});
+  cpi.insert({ISC__SLET__STATDIR, std::unordered_map<uint16_t, InstStat>()});
 
   cpi.find(9)->second.insert(
-      {41, InstStat(92, 376, 56, 158, 0, 3, clockPeriod)});
-  cpi.find(8)->second.insert({41, InstStat(29, 84, 20, 54, 0, 0, clockPeriod)});
+      {41, InstStat(94, 408, 58, 170, 0, 2, clockPeriod)});
+  cpi.find(8)->second.insert(
+      {41, InstStat(39, 144, 28, 137, 0, 2, clockPeriod)});
   cpi.find(4)->second.insert(
-      {41, InstStat(41, 176, 40, 90, 0, 1, clockPeriod)});
+      {41, InstStat(44, 176, 39, 91, 0, 1, clockPeriod)});
   cpi.find(9)->second.insert(
-      {42, InstStat(89, 368, 56, 136, 0, 0, clockPeriod)});
-  cpi.find(8)->second.insert({42, InstStat(29, 84, 20, 54, 0, 0, clockPeriod)});
+      {42, InstStat(89, 372, 57, 136, 0, 1, clockPeriod)});
+  cpi.find(8)->second.insert(
+      {42, InstStat(45, 180, 32, 147, 0, 1, clockPeriod)});
   cpi.find(4)->second.insert(
-      {42, InstStat(100, 460, 90, 208, 0, 3, clockPeriod)});
+      {42, InstStat(115, 532, 104, 244, 0, 4, clockPeriod)});
   cpi.find(15)->second.insert(
       {43, InstStat(28, 124, 35, 203, 0, 1, clockPeriod)});
   cpi.find(15)->second.insert({44, InstStat(11, 20, 6, 30, 0, 0, clockPeriod)});
@@ -451,11 +457,13 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
       {52, InstStat(39, 104, 22, 112, 0, 2, clockPeriod)});
   cpi.find(15)->second.insert(
       {53, InstStat(23, 52, 13, 67, 0, 2, clockPeriod)});
+  cpi.find(13)->second.insert(
+      {47, InstStat(17, 64, 11, 48, 0, 0, clockPeriod)});
+  cpi.find(13)->second.insert(
+      {51, InstStat(17, 56, 10, 51, 0, 1, clockPeriod)});
   cpi.find(13)->second.insert({54, InstStat(15, 40, 6, 37, 0, 1, clockPeriod)});
   cpi.find(13)->second.insert({55, InstStat(11, 28, 5, 26, 0, 1, clockPeriod)});
   cpi.find(13)->second.insert({56, InstStat(11, 28, 5, 26, 0, 0, clockPeriod)});
-  cpi.find(13)->second.insert(
-      {51, InstStat(17, 56, 10, 51, 0, 1, clockPeriod)});
   cpi.find(13)->second.insert({57, InstStat(8, 28, 9, 25, 0, 0, clockPeriod)});
   cpi.find(15)->second.insert({54, InstStat(1, 0, 0, 1, 0, 0, clockPeriod)});
   cpi.find(13)->second.insert(
@@ -466,6 +474,10 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
       {59, InstStat(11, 44, 26, 40, 0, 0, clockPeriod)});
   cpi.find(18)->second.insert(
       {54, InstStat(19, 56, 13, 51, 0, 2, clockPeriod)});
+  cpi.find(13)->second.insert(
+      {60, InstStat(13, 44, 13, 39, 0, 0, clockPeriod)});
+  cpi.find(19)->second.insert(
+      {54, InstStat(28, 148, 23, 76, 0, 4, clockPeriod)});
 
 #define ERR_MSG "Unexpected FUNCTION ID"
   static_assert(FUNCTION::ISC__GET == 41, ERR_MSG);
@@ -486,6 +498,8 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   static_assert(FUNCTION::ISC__GET_OPT == 56, ERR_MSG);
   static_assert(FUNCTION::ISC__ADD_SLET__EXT4 == 57, ERR_MSG);
   static_assert(FUNCTION::ISC__ADD_SLET__GREP == 58, ERR_MSG);
+  static_assert(FUNCTION::ISC__ADD_SLET__LISTDIR == 59, ERR_MSG);
+  static_assert(FUNCTION::ISC__ADD_SLET__STATDIR == 60, ERR_MSG);
 #undef ERR_MSG
 #define ERR_MSG "Unexpected NAMESPACE ID"
   static_assert(NAMESPACE::HIL == 4, ERR_MSG);
@@ -497,6 +511,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   static_assert(NAMESPACE::ISC__SLET == 16, ERR_MSG);
   static_assert(NAMESPACE::ISC__SLET__GREP == 17, ERR_MSG);
   static_assert(NAMESPACE::ISC__SLET__LISTDIR == 18, ERR_MSG);
+  static_assert(NAMESPACE::ISC__SLET__STATDIR == 19, ERR_MSG);
 
   assert(cpi.size() == NAMESPACE::TOTAL_NAMESPACES || !"Some CPIs are missing");
 }

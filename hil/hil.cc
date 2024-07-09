@@ -30,6 +30,7 @@
 #include "isc/sims/configs.hh"
 #include "isc/slet/grep.hh"
 #include "isc/slet/listdir.hh"
+#include "isc/slet/statdir.hh"
 
 using SimpleSSD::ISC::byte;
 
@@ -99,11 +100,13 @@ void HIL::isc_set(Request &req) {
     if (ISC_SUBCMD_IS(slba, ISC_SUBCMD_INIT)) {
       pr("Runtime Initialization -----------------------------------------");
       if (ISC_STS_FAIL == ISC::Runtime::addSlet<ISC::Ext4>(tick, ctx) ||
+          ISC_STS_FAIL == ISC::Runtime::addSlet<ISC::StatdirAPP>(tick, ctx) ||
           ISC_STS_FAIL == ISC::Runtime::addSlet<ISC::ListdirAPP>(tick, ctx) ||
           ISC_STS_FAIL == ISC::Runtime::addSlet<ISC::GrepAPP>(tick, ctx))
         panic("Failed to setup predefined slets");
 
       tick += applyLatency(CPU::ISC__RUNTIME, CPU::ISC__ADD_SLET__EXT4);
+      tick += applyLatency(CPU::ISC__RUNTIME, CPU::ISC__ADD_SLET__STATDIR);
       tick += applyLatency(CPU::ISC__RUNTIME, CPU::ISC__ADD_SLET__LISTDIR);
       tick += applyLatency(CPU::ISC__RUNTIME, CPU::ISC__ADD_SLET__GREP);
       pr("Initialization done    -----------------------------------------");
@@ -168,7 +171,8 @@ void HIL::isc_get(Request &hReq) {
 
       pr("startSlet done         -----------------------------------------");
     }
-    else if (ISC_SUBCMD_IS(slba, ISC_SUBCMD_SLET_RES))
+    else if (ISC_SUBCMD_IS(slba, ISC_SUBCMD_SLET_RES) ||
+             ISC_SUBCMD_IS(slba, ISC_SUBCMD_SLET_RESSZ))
       ;  // nothing to do here, just add latency
     else {
       panic("Unexpected ISC-GET SUBCMD: 0x%x", ISC_SUBCMD(slba));
