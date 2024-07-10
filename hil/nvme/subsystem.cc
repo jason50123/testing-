@@ -25,6 +25,7 @@
 #include "hil/nvme/controller.hh"
 #include "util/algorithm.hh"
 
+#include <set>
 #include <unordered_map>
 #include "util/b64.hh"
 
@@ -37,40 +38,72 @@ namespace NVMe {
 // the time info is a little bit later than the real request submit time, cuz
 // the source time is HIL submit time (when the device got the data + some
 // latency), not the real host submit time
-struct ISC_REQUEST_INFO {
+struct REQUEST_INFO {
   uint64_t sec;
   uint64_t ns;
 
-  ISC_REQUEST_INFO(uint64_t tick) {
+  REQUEST_INFO(uint64_t tick) {
     sec = tick / 1000000000000ULL;
     ns = tick % 1000000000000ULL;
   }
 };
 
-#define ISC_RECORD_FMT "ISC_RECORD: %lu.%lu S%c 0x%012lx + 0x%lx %s\n"
-
 // FIXME: getTick value may not be unique when there are multiple hil cores
-std::unordered_map<uint64_t, ISC_REQUEST_INFO> tobeRecorded;
+std::unordered_map<uint64_t, REQUEST_INFO> tobeRecorded;
 
-static inline void isc_record(char type, void *ioCtx, size_t lbaSize) {
+enum RecordTypes {
+  READ,
+  WRITE,
+  FLUSH,
+  ISC_GET,
+  ISC_SET,
+};
+
+static const std::set<uint64_t> needRecord({OPCODE_READ, OPCODE_WRITE,
+                                            OPCODE_FLUSH, OPCODE_ISC_GET,
+                                            OPCODE_ISC_SET});
+
+static inline void do_record(uint64_t s, uint64_t us, const char *type,
+                             uint64_t slba, uint64_t nlb, const char *b64data) {
+  printf("RECORD: %lu.%lu %s 0x%012lx + 0x%lx %s\n", s, us, type, slba, nlb,
+         b64data);
+}
+
+static inline void req_record(RecordTypes t, void *ioCtx, size_t lbaSize) {
   auto ioc = (IOContext *)ioCtx;
   auto todo = tobeRecorded.find(ioc->resp.sqSubmitTick);
   assert(todo != tobeRecorded.end());
   auto time = todo->second;
 
-  size_t isz = ioc->nlb * lbaSize;
+  size_t isz = ioc->nlb * lbaSize, osz;
   size_t oszExpect = (isz + 2) / 3 * 4;
+  char *obuf, *data = (char *)calloc(1, oszExpect + 1 /* ensure null term */);
+  const char *strType;
 
-  char *data = (char *)calloc(1, oszExpect + 1 /* ensure null terminated */);
-  if (type == 'S') {
-    size_t osz;
-    char *obuf;
-    encode((char *)ioc->buffer, isz, &obuf, &osz);
-    memcpy(data, obuf, oszExpect);
-    free(obuf);
+  switch (t) {
+    case READ:
+      strType = "R";
+      break;
+    case WRITE:
+      strType = "W";
+      break;
+    case FLUSH:
+      strType = "F";
+      break;
+    case ISC_GET:
+      strType = "SG";
+      break;
+    case ISC_SET:
+      strType = "SS";
+      encode((char *)ioc->buffer, isz, &obuf, &osz);
+      memcpy(data, obuf, oszExpect);
+      free(obuf);
+      break;
+    default:
+      strType = "??";
   }
 
-  printf(ISC_RECORD_FMT, time.sec, time.ns, type, ioc->slba, ioc->nlb, data);
+  do_record(time.sec, time.ns, strType, ioc->slba, ioc->nlb, data);
   tobeRecorded.erase(todo);
 
   free(data);
@@ -373,9 +406,9 @@ void Subsystem::submitCommand(SQEntryWrapper &req, RequestFunction func) {
   commandCount++;
 
   auto opcode = req.entry.dword0.opcode;
-  if (req.sqID && (opcode == OPCODE_ISC_GET || opcode == OPCODE_ISC_SET)) {
+  if (req.sqID && needRecord.find(opcode) != needRecord.end()) {
     req.submitTick = getTick();
-    tobeRecorded.insert({req.submitTick, ISC_REQUEST_INFO(req.submitTick)});
+    tobeRecorded.insert({req.submitTick, REQUEST_INFO(req.submitTick)});
   }
 
   // Admin command
@@ -486,10 +519,12 @@ uint32_t Subsystem::validNamespaceCount() {
 void Subsystem::read(Namespace *ns, uint64_t slba, uint64_t nlblk,
                      DMAFunction &func, void *context) {
   Request *req = new Request(func, context);
-  DMAFunction doRead = [this](uint64_t, void *context) {
+  DMAFunction doRead = [this, ns](uint64_t, void *context) {
     auto req = (Request *)context;
 
     pHIL->read(*req);
+    req_record(RecordTypes::READ, (IOContext *)req->context,
+               ns->getInfo()->lbaSize);
 
     delete req;
   };
@@ -505,7 +540,8 @@ void Subsystem::isc_get(Namespace *ns, uint64_t slba, uint64_t nlblk,
   DMAFunction doISC = [this, ns](uint64_t, void *hReq) {
     auto h = (Request *)hReq;
     pHIL->isc_get(*h);
-    isc_record('G', (IOContext *)h->context, ns->getInfo()->lbaSize);
+    req_record(RecordTypes::ISC_GET, (IOContext *)h->context,
+               ns->getInfo()->lbaSize);
     delete (Request *)hReq;
   };
 
@@ -520,7 +556,8 @@ void Subsystem::isc_set(Namespace *ns, uint64_t slba, uint64_t nlblk,
   DMAFunction doISC = [this, ns](uint64_t, void *hReq) {
     auto h = (Request *)hReq;
     pHIL->isc_set(*h);
-    isc_record('S', (IOContext *)h->context, ns->getInfo()->lbaSize);
+    req_record(RecordTypes::ISC_SET, (IOContext *)h->context,
+               ns->getInfo()->lbaSize);
     delete (Request *)hReq;
   };
   convertUnit(ns, slba, nlblk, *hReq);
@@ -530,11 +567,12 @@ void Subsystem::isc_set(Namespace *ns, uint64_t slba, uint64_t nlblk,
 void Subsystem::write(Namespace *ns, uint64_t slba, uint64_t nlblk,
                       DMAFunction &func, void *context) {
   Request *req = new Request(func, context);
-  DMAFunction doWrite = [this](uint64_t, void *context) {
+  DMAFunction doWrite = [this, ns](uint64_t, void *context) {
     auto req = (Request *)context;
 
     pHIL->write(*req);
-
+    req_record(RecordTypes::WRITE, (IOContext *)req->context,
+               ns->getInfo()->lbaSize);
     delete req;
   };
 
@@ -553,6 +591,8 @@ void Subsystem::flush(Namespace *ns, DMAFunction &func, void *context) {
   req.length = info->range.nlp * logicalPageSize;
 
   pHIL->flush(req);
+
+  req_record(RecordTypes::FLUSH, (IOContext *)context, ns->getInfo()->lbaSize);
 }
 
 void Subsystem::trim(Namespace *ns, uint64_t slba, uint64_t nlblk,
