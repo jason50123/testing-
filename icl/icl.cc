@@ -24,6 +24,8 @@
 #include "util/algorithm.hh"
 #include "util/def.hh"
 
+#include "isc/sims/dram.hh"
+
 namespace SimpleSSD {
 
 namespace ICL {
@@ -32,7 +34,7 @@ ICL::ICL(ConfigReader &c) : conf(c) {
   switch (conf.readInt(CONFIG_DRAM, DRAM::DRAM_MODEL)) {
     case DRAM::SIMPLE_MODEL:
       pDRAM = new DRAM::SimpleDRAM(conf);
-
+      ISC::SIM::DRAM::setDRAM(pDRAM);
       break;
     default:
       panic("Undefined DRAM model");
@@ -61,6 +63,7 @@ ICL::~ICL() {
   delete pCache;
   delete pFTL;
   delete pDRAM;
+  ISC::SIM::DRAM::destroy();
 }
 
 void ICL::read(Request &req, uint64_t &tick) {
