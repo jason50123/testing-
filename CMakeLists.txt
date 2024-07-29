@@ -112,8 +112,6 @@ set(SRC_ISC_UTILS
 )
 set(SRC_ISC_SLET
   isc/slet/slet.cc
-  isc/slet/grep.cc
-  isc/slet/listdir.cc
   isc/slet/statdir.cc
 )
 set(SRC_ISC_FSA

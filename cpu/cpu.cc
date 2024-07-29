@@ -312,8 +312,6 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.insert({ISC__FSA, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__FSA__EXT4, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET, std::unordered_map<uint16_t, InstStat>()});
-  cpi.insert({ISC__SLET__GREP, std::unordered_map<uint16_t, InstStat>()});
-  cpi.insert({ISC__SLET__LISTDIR, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET__STATDIR, std::unordered_map<uint16_t, InstStat>()});
 
   cpi.find(9)->second.insert(
@@ -356,16 +354,8 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(13)->second.insert({57, InstStat(8, 28, 9, 25, 0, 0, clockPeriod)});
   cpi.find(15)->second.insert({54, InstStat(1, 0, 0, 1, 0, 0, clockPeriod)});
   cpi.find(13)->second.insert(
-      {58, InstStat(11, 44, 13, 36, 0, 0, clockPeriod)});
+      {58, InstStat(13, 44, 13, 39, 0, 0, clockPeriod)});
   cpi.find(17)->second.insert(
-      {54, InstStat(24, 44, 10, 66, 0, 1, clockPeriod)});
-  cpi.find(13)->second.insert(
-      {59, InstStat(11, 44, 26, 40, 0, 0, clockPeriod)});
-  cpi.find(18)->second.insert(
-      {54, InstStat(19, 56, 13, 51, 0, 2, clockPeriod)});
-  cpi.find(13)->second.insert(
-      {60, InstStat(13, 44, 13, 39, 0, 0, clockPeriod)});
-  cpi.find(19)->second.insert(
       {54, InstStat(28, 148, 23, 76, 0, 4, clockPeriod)});
 
 #define ERR_MSG "Unexpected FUNCTION ID"
@@ -386,9 +376,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   static_assert(FUNCTION::ISC__SET_OPT == 55, ERR_MSG);
   static_assert(FUNCTION::ISC__GET_OPT == 56, ERR_MSG);
   static_assert(FUNCTION::ISC__ADD_SLET__EXT4 == 57, ERR_MSG);
-  static_assert(FUNCTION::ISC__ADD_SLET__GREP == 58, ERR_MSG);
-  static_assert(FUNCTION::ISC__ADD_SLET__LISTDIR == 59, ERR_MSG);
-  static_assert(FUNCTION::ISC__ADD_SLET__STATDIR == 60, ERR_MSG);
+  static_assert(FUNCTION::ISC__ADD_SLET__STATDIR == 58, ERR_MSG);
 #undef ERR_MSG
 #define ERR_MSG "Unexpected NAMESPACE ID"
   static_assert(NAMESPACE::HIL == 4, ERR_MSG);
@@ -398,9 +386,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   static_assert(NAMESPACE::ISC__FSA == 14, ERR_MSG);
   static_assert(NAMESPACE::ISC__FSA__EXT4 == 15, ERR_MSG);
   static_assert(NAMESPACE::ISC__SLET == 16, ERR_MSG);
-  static_assert(NAMESPACE::ISC__SLET__GREP == 17, ERR_MSG);
-  static_assert(NAMESPACE::ISC__SLET__LISTDIR == 18, ERR_MSG);
-  static_assert(NAMESPACE::ISC__SLET__STATDIR == 19, ERR_MSG);
+  static_assert(NAMESPACE::ISC__SLET__STATDIR == 17, ERR_MSG);
 
   assert(cpi.size() == NAMESPACE::TOTAL_NAMESPACES || !"Some CPIs are missing");
 }

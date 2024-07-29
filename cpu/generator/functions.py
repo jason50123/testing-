@@ -168,9 +168,7 @@ ISC__RUNTIME = 13
 ISC__FSA = 14
 ISC__FSA__EXT4 = 15
 ISC__SLET = 16
-ISC__SLET__GREP = 17
-ISC__SLET__LISTDIR = 18
-ISC__SLET__STATDIR = 19
+ISC__SLET__STATDIR = 17
 
 # FCT
 ISC_GET = 41
@@ -190,9 +188,7 @@ ISC__START_SLET = 54
 ISC__SET_OPT = 55
 ISC__GET_OPT = 56
 ISC__ADD_SLET__EXT4 = 57
-ISC__ADD_SLET__GREP = 58
-ISC__ADD_SLET__LISTDIR = 59
-ISC__ADD_SLET__STATDIR = 60
+ISC__ADD_SLET__STATDIR = 58
 
 function = [
     ["hil/nvme/namespace.cc", "Namespace::isc_get",      HIL_NVMe_Namespace, ISC_GET],
@@ -219,10 +215,6 @@ function = [
     ["isc/runtime.cc", "Runtime::getOpt",                ISC__RUNTIME, ISC__GET_OPT],
     ["isc/fs/ext4/ext4.cc", "Runtime::addSlet<SimpleSSD::ISC::Ext4>",       ISC__RUNTIME, ISC__ADD_SLET__EXT4],
     ["isc/fs/ext4/ext4.cc", "builtin_startup",                              ISC__FSA__EXT4, ISC__START_SLET],
-    ["isc/slet/grep.cc", "Runtime::addSlet<SimpleSSD::ISC::GrepAPP>",       ISC__RUNTIME, ISC__ADD_SLET__GREP],
-    ["isc/slet/grep.cc", "builtin_startup",                                 ISC__SLET__GREP, ISC__START_SLET],
-    ["isc/slet/listdir.cc", "Runtime::addSlet<SimpleSSD::ISC::ListdirAPP>", ISC__RUNTIME, ISC__ADD_SLET__LISTDIR],
-    ["isc/slet/listdir.cc", "builtin_startup",                              ISC__SLET__LISTDIR, ISC__START_SLET],
     ["isc/slet/statdir.cc", "Runtime::addSlet<SimpleSSD::ISC::StatdirAPP>", ISC__RUNTIME, ISC__ADD_SLET__STATDIR],
     ["isc/slet/statdir.cc", "builtin_startup",                              ISC__SLET__STATDIR, ISC__START_SLET],
 ]

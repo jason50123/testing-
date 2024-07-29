@@ -48,8 +48,6 @@ typedef enum : uint16_t {
   ISC__FSA,
   ISC__FSA__EXT4,
   ISC__SLET,
-  ISC__SLET__GREP,
-  ISC__SLET__LISTDIR,
   ISC__SLET__STATDIR,
 
   TOTAL_NAMESPACES
@@ -142,8 +140,6 @@ typedef enum : uint16_t {
   ISC__SET_OPT,
   ISC__GET_OPT,
   ISC__ADD_SLET__EXT4,
-  ISC__ADD_SLET__GREP,
-  ISC__ADD_SLET__LISTDIR,
   ISC__ADD_SLET__STATDIR,
 
   TOTAL_FUNCTIONS,
