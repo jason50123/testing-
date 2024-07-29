@@ -31,119 +31,6 @@ namespace SimpleSSD {
 
 namespace CPU {
 
-#define enum2str(x) #x
-#define SAME_STR(literal, s) (!const_strncmp(literal, s, sizeof(literal) - 1))
-#define CHECK_ENUM_STRS(e, s) static_assert(SAME_STR(#e, s), "MISALIGNED")
-
-#define ARRAY2D_SZ(arr) (sizeof((arr)) / sizeof((arr)[0]))
-#define CHECK_NS2STR(e)                                                        \
-  CHECK_ENUM_STRS(e, NS2STR[e]);                                               \
-  static_assert(ARRAY2D_SZ(NS2STR) == TOTAL_NAMESPACES + 1, "")
-#define CHECK_FCT2STR(e)                                                       \
-  CHECK_ENUM_STRS(e, FCT2STR[e]);                                              \
-  static_assert(ARRAY2D_SZ(FCT2STR) == TOTAL_FUNCTIONS + 1, "")
-
-constexpr const char *NS2STR[] = {
-    enum2str(FTL),
-    enum2str(FTL__PAGE_MAPPING),
-    enum2str(ICL),
-    enum2str(ICL__GENERIC_CACHE),
-    enum2str(HIL),
-    enum2str(NVME__CONTROLLER),
-    enum2str(NVME__PRPLIST),
-    enum2str(NVME__SGL),
-    enum2str(NVME__SUBSYSTEM),
-    enum2str(NVME__NAMESPACE),
-    enum2str(NVME__OCSSD),
-    enum2str(UFS__DEVICE),
-    enum2str(SATA__DEVICE),
-    enum2str(ISC__RUNTIME),
-    enum2str(ISC__FSA),
-    enum2str(ISC__FSA__EXT4),
-    enum2str(ISC__SLET),
-    enum2str(ISC__SLET__GREP),
-    enum2str(ISC__SLET__LISTDIR),
-    enum2str(ISC__SLET__STATDIR),
-    enum2str(TOTAL_NAMESPACES),
-};
-
-constexpr const char *FCT2STR[] = {
-    enum2str(READ),
-    enum2str(WRITE),
-    enum2str(FLUSH),
-    enum2str(TRIM),
-    enum2str(FORMAT),
-    enum2str(READ_INTERNAL),
-    enum2str(WRITE_INTERNAL),
-    enum2str(ERASE_INTERNAL),
-    enum2str(TRIM_INTERNAL),
-    enum2str(SELECT_VICTIM_BLOCK),
-    enum2str(DO_GARBAGE_COLLECTION),
-    enum2str(CREATE_CQ),
-    enum2str(CREATE_SQ),
-    enum2str(COLLECT_SQ),
-    enum2str(HANDLE_REQUEST),
-    enum2str(WORK),
-    enum2str(COMPLETION),
-    enum2str(GET_PRPLIST_FROM_PRP),
-    enum2str(PARSE_SGL_SEGMENT),
-    enum2str(SUBMIT_COMMAND),
-    enum2str(CONVERT_UNIT),
-    enum2str(FORMAT_NVM),
-    enum2str(DATASET_MANAGEMENT),
-    enum2str(VECTOR_CHUNK_READ),
-    enum2str(VECTOR_CHUNK_WRITE),
-    enum2str(VECTOR_CHUNK_RESET),
-    enum2str(PHYSICAL_PAGE_READ),
-    enum2str(PHYSICAL_PAGE_WRITE),
-    enum2str(PHYSICAL_BLOCK_ERASE),
-    enum2str(PROCESS_QUERY_COMMAND),
-    enum2str(PROCESS_COMMAND),
-    enum2str(PRDT_READ),
-    enum2str(PRDT_WRITE),
-    enum2str(READ_DMA),
-    enum2str(READ_NCQ),
-    enum2str(READ_DMA_SETUP),
-    enum2str(READ_DMA_DONE),
-    enum2str(WRITE_DMA),
-    enum2str(WRITE_NCQ),
-    enum2str(WRITE_DMA_SETUP),
-    enum2str(WRITE_DMA_DONE),
-    enum2str(ISC_GET),
-    enum2str(ISC_SET),
-    enum2str(ISC__INIT),
-    enum2str(ISC__GET_SUPER),
-    enum2str(ISC__GET_GROUP),
-    enum2str(ISC__GET_IMAP),
-    enum2str(ISC__GET_INODE),
-    enum2str(ISC__GET_INODE_PARENT),
-    enum2str(ISC__GET_EXTENT_SIZE),
-    enum2str(ISC__GET_EXTENT_INTERNAL),
-    enum2str(ISC__GET_EXTENT),
-    enum2str(ISC__DIR_SEARCH_FILE),
-    enum2str(ISC__NAMEI),
-    enum2str(ISC__START_SLET),
-    enum2str(ISC__SET_OPT),
-    enum2str(ISC__GET_OPT),
-    enum2str(ISC__ADD_SLET__EXT4),
-    enum2str(ISC__ADD_SLET__GREP),
-    enum2str(ISC__ADD_SLET__LISTDIR),
-    enum2str(ISC__ADD_SLET__STATDIR),
-    enum2str(TOTAL_FUNCTIONS),
-};
-
-CHECK_NS2STR(ISC__RUNTIME);
-CHECK_NS2STR(ISC__FSA);
-CHECK_NS2STR(ISC__SLET);
-CHECK_NS2STR(ISC__SLET__GREP);     // slet start
-CHECK_NS2STR(ISC__SLET__STATDIR);  // slet end
-CHECK_NS2STR(TOTAL_NAMESPACES);
-CHECK_FCT2STR(ISC__INIT);               // FSA start
-CHECK_FCT2STR(ISC__NAMEI);              // FSA end
-CHECK_FCT2STR(ISC__START_SLET);         // runtime start
-CHECK_FCT2STR(ISC__ADD_SLET__STATDIR);  // runtime end
-CHECK_FCT2STR(TOTAL_FUNCTIONS);
-
 InstStat::_InstStat()
     : branch(0),
       load(0),
@@ -265,6 +152,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   assert(iscCore.size() > 0 || !"Number of ISC Cores not expected to be zero");
 
   // Initialize CPU table
+#if 1  // won't change these values, make them foldable
   cpi.insert({FTL, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({FTL__PAGE_MAPPING, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ICL, std::unordered_map<uint16_t, InstStat>()});
@@ -417,6 +305,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
       {39, InstStat(18, 56, 10, 37, 0, 1, clockPeriod)});
   cpi.find(12)->second.insert(
       {40, InstStat(33, 100, 17, 61, 0, 3, clockPeriod)});
+#endif
 
   // CPIs for ISC module
   cpi.insert({ISC__RUNTIME, std::unordered_map<uint16_t, InstStat>()});
