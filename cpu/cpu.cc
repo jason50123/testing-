@@ -313,52 +313,109 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.insert({ISC__FSA__EXT4, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET__STATDIR, std::unordered_map<uint16_t, InstStat>()});
+  cpi.insert({ISC__SLET__MD5, std::unordered_map<uint16_t, InstStat>()});
+  assert(cpi.size() == NAMESPACE::TOTAL_NAMESPACES || !"Some CPIs are missing");
 
-  cpi.find(9)->second.insert(
-      {41, InstStat(94, 408, 58, 170, 0, 2, clockPeriod)});
-  cpi.find(8)->second.insert(
-      {41, InstStat(39, 144, 28, 137, 0, 2, clockPeriod)});
-  cpi.find(4)->second.insert(
-      {41, InstStat(44, 176, 39, 91, 0, 1, clockPeriod)});
-  cpi.find(9)->second.insert(
-      {42, InstStat(89, 372, 57, 136, 0, 1, clockPeriod)});
-  cpi.find(8)->second.insert(
-      {42, InstStat(45, 180, 32, 147, 0, 1, clockPeriod)});
-  cpi.find(4)->second.insert(
-      {42, InstStat(115, 532, 104, 244, 0, 4, clockPeriod)});
-  cpi.find(15)->second.insert(
-      {43, InstStat(28, 124, 35, 203, 0, 1, clockPeriod)});
-  cpi.find(15)->second.insert({44, InstStat(11, 20, 6, 30, 0, 0, clockPeriod)});
-  cpi.find(15)->second.insert({45, InstStat(8, 20, 7, 31, 0, 0, clockPeriod)});
-  cpi.find(15)->second.insert({46, InstStat(15, 44, 8, 61, 0, 1, clockPeriod)});
-  cpi.find(15)->second.insert({47, InstStat(19, 60, 9, 66, 0, 0, clockPeriod)});
-  cpi.find(15)->second.insert(
-      {48, InstStat(18, 84, 16, 58, 0, 0, clockPeriod)});
-  cpi.find(15)->second.insert(
-      {49, InstStat(25, 84, 17, 71, 0, 2, clockPeriod)});
-  cpi.find(15)->second.insert(
-      {50, InstStat(26, 112, 29, 83, 0, 1, clockPeriod)});
-  cpi.find(15)->second.insert(
-      {51, InstStat(32, 92, 20, 80, 0, 0, clockPeriod)});
-  cpi.find(15)->second.insert(
-      {52, InstStat(39, 104, 22, 112, 0, 2, clockPeriod)});
-  cpi.find(15)->second.insert(
-      {53, InstStat(23, 52, 13, 67, 0, 2, clockPeriod)});
-  cpi.find(13)->second.insert(
-      {47, InstStat(17, 64, 11, 48, 0, 0, clockPeriod)});
-  cpi.find(13)->second.insert(
-      {51, InstStat(17, 56, 10, 51, 0, 1, clockPeriod)});
-  cpi.find(13)->second.insert({54, InstStat(15, 40, 6, 37, 0, 1, clockPeriod)});
-  cpi.find(13)->second.insert({55, InstStat(11, 28, 5, 26, 0, 1, clockPeriod)});
-  cpi.find(13)->second.insert({56, InstStat(11, 28, 5, 26, 0, 0, clockPeriod)});
-  cpi.find(13)->second.insert({57, InstStat(8, 28, 9, 25, 0, 0, clockPeriod)});
-  cpi.find(15)->second.insert({54, InstStat(1, 0, 0, 1, 0, 0, clockPeriod)});
-  cpi.find(13)->second.insert(
-      {58, InstStat(13, 44, 13, 39, 0, 0, clockPeriod)});
-  cpi.find(17)->second.insert(
-      {54, InstStat(28, 148, 23, 76, 0, 4, clockPeriod)});
+  // clang-format off
+  { // used for folding this section
+  cpi.find(NVME__NAMESPACE)->second.insert({ISC__GET,InstStat(98,420,56,181,0,2,clockPeriod)});
+  cpi.find(NVME__SUBSYSTEM)->second.insert({ISC__GET,InstStat(39,144,28,138,0,1,clockPeriod)});
+  cpi.find(HIL)->second.insert({ISC__GET,InstStat(44,176,39,92,0,2,clockPeriod)});
+  cpi.find(NVME__NAMESPACE)->second.insert({ISC__SET,InstStat(89,372,57,136,0,1,clockPeriod)});
+  cpi.find(NVME__SUBSYSTEM)->second.insert({ISC__SET,InstStat(45,180,32,148,0,2,clockPeriod)});
+  cpi.find(HIL)->second.insert({ISC__SET,InstStat(102,464,91,213,0,4,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__INIT,InstStat(35,196,46,235,0,1,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_SUPER,InstStat(11,24,6,30,0,1,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_GROUP,InstStat(18,112,37,61,0,1,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_IMAP,InstStat(15,48,8,61,0,0,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_INODE,InstStat(28,116,16,90,0,1,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_INODE_PARENT,InstStat(18,88,17,59,0,0,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_EXTENT_SIZE,InstStat(24,88,18,72,0,3,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_EXTENT_INTERNAL,InstStat(25,116,30,84,0,2,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_EXTENT,InstStat(32,96,20,81,0,0,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__DIR_SEARCH_FILE,InstStat(42,120,22,108,0,1,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__NAMEI,InstStat(23,56,13,68,0,2,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__GET_INODE,InstStat(17,68,11,48,0,1,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__GET_EXTENT,InstStat(17,60,10,51,0,0,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__START_SLET,InstStat(15,44,6,37,0,0,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__SET_OPT,InstStat(11,36,6,26,0,0,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__GET_OPT,InstStat(11,36,6,26,0,0,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__EXT4,InstStat(8,28,9,25,0,0,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__START_SLET,InstStat(1,0,0,1,0,0,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__STATDIR,InstStat(13,44,13,39,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__STATDIR)->second.insert({ISC__START_SLET,InstStat(28,148,23,76,0,4,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__MD5,InstStat(11,44,27,39,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__MD5)->second.insert({ISC__START_SLET,InstStat(43,88,15,87,0,1,clockPeriod)});
+  cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK1,InstStat(10,44,12,53,0,1,clockPeriod)});
+  cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK2,InstStat(4,108,21,618,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK3,InstStat(18,56,17,72,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK4,InstStat(3,32,9,24,0,2,clockPeriod)});
 
+// check values defines in functions.py match those defined in def.hh
+#define ERR_MSG "Unexpected NAMESPACE ID"
+  static_assert(NAMESPACE::FTL == 0, ERR_MSG);
+  static_assert(NAMESPACE::FTL__PAGE_MAPPING == 1, ERR_MSG);
+  static_assert(NAMESPACE::ICL == 2, ERR_MSG);
+  static_assert(NAMESPACE::ICL__GENERIC_CACHE == 3, ERR_MSG);
+  static_assert(NAMESPACE::HIL == 4, ERR_MSG);
+  static_assert(NAMESPACE::NVME__CONTROLLER == 5, ERR_MSG);
+  static_assert(NAMESPACE::NVME__PRPLIST == 6, ERR_MSG);
+  static_assert(NAMESPACE::NVME__SGL == 7, ERR_MSG);
+  static_assert(NAMESPACE::NVME__SUBSYSTEM == 8, ERR_MSG);
+  static_assert(NAMESPACE::NVME__NAMESPACE == 9, ERR_MSG);
+  static_assert(NAMESPACE::NVME__OCSSD == 10, ERR_MSG);
+  static_assert(NAMESPACE::UFS__DEVICE == 11, ERR_MSG);
+  static_assert(NAMESPACE::SATA__DEVICE == 12, ERR_MSG);
+  static_assert(NAMESPACE::ISC__RUNTIME == 13, ERR_MSG);
+  static_assert(NAMESPACE::ISC__FSA == 14, ERR_MSG);
+  static_assert(NAMESPACE::ISC__FSA__EXT4 == 15, ERR_MSG);
+  static_assert(NAMESPACE::ISC__SLET == 16, ERR_MSG);
+  static_assert(NAMESPACE::ISC__SLET__STATDIR == 17, ERR_MSG);
+  static_assert(NAMESPACE::ISC__SLET__MD5 == 18, ERR_MSG);
+  static_assert(NAMESPACE::TOTAL_NAMESPACES == 19, ERR_MSG);
+#undef ERR_MSG
 #define ERR_MSG "Unexpected FUNCTION ID"
+  static_assert(FUNCTION::READ == 0, ERR_MSG);
+  static_assert(FUNCTION::WRITE == 1, ERR_MSG);
+  static_assert(FUNCTION::FLUSH == 2, ERR_MSG);
+  static_assert(FUNCTION::TRIM == 3, ERR_MSG);
+  static_assert(FUNCTION::FORMAT == 4, ERR_MSG);
+  static_assert(FUNCTION::READ_INTERNAL == 5, ERR_MSG);
+  static_assert(FUNCTION::WRITE_INTERNAL == 6, ERR_MSG);
+  static_assert(FUNCTION::ERASE_INTERNAL == 7, ERR_MSG);
+  static_assert(FUNCTION::TRIM_INTERNAL == 8, ERR_MSG);
+  static_assert(FUNCTION::SELECT_VICTIM_BLOCK == 9, ERR_MSG);
+  static_assert(FUNCTION::DO_GARBAGE_COLLECTION == 10, ERR_MSG);
+  static_assert(FUNCTION::CREATE_CQ == 11, ERR_MSG);
+  static_assert(FUNCTION::CREATE_SQ == 12, ERR_MSG);
+  static_assert(FUNCTION::COLLECT_SQ == 13, ERR_MSG);
+  static_assert(FUNCTION::HANDLE_REQUEST == 14, ERR_MSG);
+  static_assert(FUNCTION::WORK == 15, ERR_MSG);
+  static_assert(FUNCTION::COMPLETION == 16, ERR_MSG);
+  static_assert(FUNCTION::GET_PRPLIST_FROM_PRP == 17, ERR_MSG);
+  static_assert(FUNCTION::PARSE_SGL_SEGMENT == 18, ERR_MSG);
+  static_assert(FUNCTION::SUBMIT_COMMAND == 19, ERR_MSG);
+  static_assert(FUNCTION::CONVERT_UNIT == 20, ERR_MSG);
+  static_assert(FUNCTION::FORMAT_NVM == 21, ERR_MSG);
+  static_assert(FUNCTION::DATASET_MANAGEMENT == 22, ERR_MSG);
+  static_assert(FUNCTION::VECTOR_CHUNK_READ == 23, ERR_MSG);
+  static_assert(FUNCTION::VECTOR_CHUNK_WRITE == 24, ERR_MSG);
+  static_assert(FUNCTION::VECTOR_CHUNK_RESET == 25, ERR_MSG);
+  static_assert(FUNCTION::PHYSICAL_PAGE_READ == 26, ERR_MSG);
+  static_assert(FUNCTION::PHYSICAL_PAGE_WRITE == 27, ERR_MSG);
+  static_assert(FUNCTION::PHYSICAL_BLOCK_ERASE == 28, ERR_MSG);
+  static_assert(FUNCTION::PROCESS_QUERY_COMMAND == 29, ERR_MSG);
+  static_assert(FUNCTION::PROCESS_COMMAND == 30, ERR_MSG);
+  static_assert(FUNCTION::PRDT_READ == 31, ERR_MSG);
+  static_assert(FUNCTION::PRDT_WRITE == 32, ERR_MSG);
+  static_assert(FUNCTION::READ_DMA == 33, ERR_MSG);
+  static_assert(FUNCTION::READ_NCQ == 34, ERR_MSG);
+  static_assert(FUNCTION::READ_DMA_SETUP == 35, ERR_MSG);
+  static_assert(FUNCTION::READ_DMA_DONE == 36, ERR_MSG);
+  static_assert(FUNCTION::WRITE_DMA == 37, ERR_MSG);
+  static_assert(FUNCTION::WRITE_NCQ == 38, ERR_MSG);
+  static_assert(FUNCTION::WRITE_DMA_SETUP == 39, ERR_MSG);
+  static_assert(FUNCTION::WRITE_DMA_DONE == 40, ERR_MSG);
   static_assert(FUNCTION::ISC__GET == 41, ERR_MSG);
   static_assert(FUNCTION::ISC__SET == 42, ERR_MSG);
   static_assert(FUNCTION::ISC__INIT == 43, ERR_MSG);
@@ -375,20 +432,18 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   static_assert(FUNCTION::ISC__START_SLET == 54, ERR_MSG);
   static_assert(FUNCTION::ISC__SET_OPT == 55, ERR_MSG);
   static_assert(FUNCTION::ISC__GET_OPT == 56, ERR_MSG);
-  static_assert(FUNCTION::ISC__ADD_SLET__EXT4 == 57, ERR_MSG);
-  static_assert(FUNCTION::ISC__ADD_SLET__STATDIR == 58, ERR_MSG);
+  static_assert(FUNCTION::ISC__TASK1 == 57, ERR_MSG);
+  static_assert(FUNCTION::ISC__TASK2 == 58, ERR_MSG);
+  static_assert(FUNCTION::ISC__TASK3 == 59, ERR_MSG);
+  static_assert(FUNCTION::ISC__TASK4 == 60, ERR_MSG);
+  static_assert(FUNCTION::ISC__TASK5 == 61, ERR_MSG);
+  static_assert(FUNCTION::ISC__ADD_SLET__EXT4 == 62, ERR_MSG);
+  static_assert(FUNCTION::ISC__ADD_SLET__STATDIR == 63, ERR_MSG);
+  static_assert(FUNCTION::ISC__ADD_SLET__MD5 == 64, ERR_MSG);
+  static_assert(FUNCTION::TOTAL_FUNCTIONS == 65, ERR_MSG);
 #undef ERR_MSG
-#define ERR_MSG "Unexpected NAMESPACE ID"
-  static_assert(NAMESPACE::HIL == 4, ERR_MSG);
-  static_assert(NAMESPACE::NVME__SUBSYSTEM == 8, ERR_MSG);
-  static_assert(NAMESPACE::NVME__NAMESPACE == 9, ERR_MSG);
-  static_assert(NAMESPACE::ISC__RUNTIME == 13, ERR_MSG);
-  static_assert(NAMESPACE::ISC__FSA == 14, ERR_MSG);
-  static_assert(NAMESPACE::ISC__FSA__EXT4 == 15, ERR_MSG);
-  static_assert(NAMESPACE::ISC__SLET == 16, ERR_MSG);
-  static_assert(NAMESPACE::ISC__SLET__STATDIR == 17, ERR_MSG);
-
-  assert(cpi.size() == NAMESPACE::TOTAL_NAMESPACES || !"Some CPIs are missing");
+  } // used for folding this section
+  // clang-format on
 }
 
 CPU::~CPU() {}

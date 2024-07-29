@@ -114,6 +114,7 @@ const std::string logName[LOG_NUM] = {
     "ISC::RUNTIME",       //!< LOG_ISC_RUNTIME
     "ISC::SLET",                //!< LOG_ISC_SLET
     "ISC::SLET::STATDIR",       //!< LOG_ISC_SLET_STATDIR
+    "ISC::SLET::MD5",           //!< LOG_ISC_SLET_MD5
     "ISC::FSA",                 //!< LOG_ISC_FSA
     "ISC::FSA::EXT4",           //!< LOG_ISC_EXT4
 };

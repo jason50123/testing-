@@ -160,35 +160,43 @@ function = [
 
 # add here for change the += to = for testing to avoid comment all the other functions
 # NS
-HIL = 4
-HIL_NVMe_Subsystem = 8
-HIL_NVMe_Namespace = 9
+HIL                 = 4
+HIL_NVMe_Subsystem  = 8
+HIL_NVMe_Namespace  = 9
 
-ISC__RUNTIME = 13
-ISC__FSA = 14
-ISC__FSA__EXT4 = 15
-ISC__SLET = 16
-ISC__SLET__STATDIR = 17
+ISC__RUNTIME        = 13
+ISC__FSA            = 14
+ISC__FSA__EXT4      = 15
+ISC__SLET           = 16
+ISC__SLET__STATDIR  = 17
+ISC__SLET__MD5      = 18
 
 # FCT
-ISC_GET = 41
-ISC_SET = 42
-ISC__INIT = 43
-ISC__GET_SUPER = 44
-ISC__GET_GROUP = 45
-ISC__GET_IMAP = 46
-ISC__GET_INODE = 47
-ISC__GET_INODE_PARENT = 48
-ISC__GET_EXTENT_SIZE = 49
-ISC__GET_EXTENT_INTERNAL = 50
-ISC__GET_EXTENT = 51
-ISC__DIR_SEARCH_FILE = 52
-ISC__NAMEI = 53
-ISC__START_SLET = 54
-ISC__SET_OPT = 55
-ISC__GET_OPT = 56
-ISC__ADD_SLET__EXT4 = 57
-ISC__ADD_SLET__STATDIR = 58
+FCT_IDX = 41
+FCT_IDX, ISC_GET                    = FCT_IDX + 1, FCT_IDX  # similar to B = A++
+FCT_IDX, ISC_SET                    = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__INIT                  = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__GET_SUPER             = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__GET_GROUP             = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__GET_IMAP              = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__GET_INODE             = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__GET_INODE_PARENT      = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__GET_EXTENT_SIZE       = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__GET_EXTENT_INTERNAL   = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__GET_EXTENT            = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__DIR_SEARCH_FILE       = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__NAMEI                 = FCT_IDX + 1, FCT_IDX # 53
+FCT_IDX, ISC__START_SLET            = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__SET_OPT               = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__GET_OPT               = FCT_IDX + 1, FCT_IDX # 56
+FCT_IDX, ISC__TASK1                 = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__TASK2                 = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__TASK3                 = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__TASK4                 = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__TASK5                 = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__ADD_SLET__EXT4        = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__ADD_SLET__STATDIR     = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__ADD_SLET__MD5         = FCT_IDX + 1, FCT_IDX
 
 function = [
     ["hil/nvme/namespace.cc", "Namespace::isc_get",      HIL_NVMe_Namespace, ISC_GET],
@@ -217,4 +225,10 @@ function = [
     ["isc/fs/ext4/ext4.cc", "builtin_startup",                              ISC__FSA__EXT4, ISC__START_SLET],
     ["isc/slet/statdir.cc", "Runtime::addSlet<SimpleSSD::ISC::StatdirAPP>", ISC__RUNTIME, ISC__ADD_SLET__STATDIR],
     ["isc/slet/statdir.cc", "builtin_startup",                              ISC__SLET__STATDIR, ISC__START_SLET],
+    ["isc/slet/md5.cc", "Runtime::addSlet<SimpleSSD::ISC::MD5APP>",         ISC__RUNTIME, ISC__ADD_SLET__MD5],
+    ["isc/slet/md5.cc", "builtin_startup",                                  ISC__SLET__MD5, ISC__START_SLET],
+    ["isc/slet/md5.cc", "MD5APP::md5sum",                                   ISC__SLET__MD5, ISC__TASK1],
+    ["isc/slet/md5.cc", "MD5Transform",                                     ISC__SLET__MD5, ISC__TASK2],
+    ["isc/slet/md5.cc", "MD5Update",                                        ISC__SLET__MD5, ISC__TASK3],
+    ["isc/slet/md5.cc", "Encode",                                           ISC__SLET__MD5, ISC__TASK4],
 ]
