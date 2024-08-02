@@ -40,11 +40,11 @@ namespace NVMe {
 // latency), not the real host submit time
 struct REQUEST_INFO {
   uint64_t sec;
-  uint64_t ns;
+  uint64_t ps;
 
   REQUEST_INFO(uint64_t tick) {
     sec = tick / 1000000000000ULL;
-    ns = tick % 1000000000000ULL;
+    ps = tick % 1000000000000ULL;
   }
 };
 
@@ -63,9 +63,9 @@ static const std::set<uint64_t> needRecord({OPCODE_READ, OPCODE_WRITE,
                                             OPCODE_FLUSH, OPCODE_ISC_GET,
                                             OPCODE_ISC_SET});
 
-static inline void do_record(uint64_t s, uint64_t us, const char *type,
+static inline void do_record(uint64_t s, uint64_t ps, const char *type,
                              uint64_t slba, uint64_t nlb, const char *b64data) {
-  printf("RECORD: %lu.%lu %s 0x%012lx + 0x%lx %s\n", s, us, type, slba, nlb,
+  printf("RECORD: %lu.%012lu %s 0x%012lx + 0x%lx %s\n", s, ps, type, slba, nlb,
          b64data);
 }
 
@@ -103,7 +103,7 @@ static inline void req_record(RecordTypes t, void *ioCtx, size_t lbaSize) {
       strType = "??";
   }
 
-  do_record(time.sec, time.ns, strType, ioc->slba, ioc->nlb, data);
+  do_record(time.sec, time.ps, strType, ioc->slba, ioc->nlb, data);
   tobeRecorded.erase(todo);
 
   free(data);
