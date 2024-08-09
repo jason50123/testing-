@@ -343,9 +343,10 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__EXT4,InstStat(8,28,9,25,0,0,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__START_SLET,InstStat(1,0,0,1,0,0,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__STATDIR,InstStat(13,44,13,39,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__STATDIR)->second.insert({ISC__START_SLET,InstStat(28,148,23,76,0,4,clockPeriod)});
+  cpi.find(ISC__SLET__STATDIR)->second.insert({ISC__START_SLET,InstStat(21,68,17,78,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__STATDIR)->second.insert({ISC__TASK1,InstStat(17,76,16,45,0,2,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__MD5,InstStat(11,44,27,39,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__MD5)->second.insert({ISC__START_SLET,InstStat(43,88,15,87,0,1,clockPeriod)});
+  cpi.find(ISC__SLET__MD5)->second.insert({ISC__START_SLET,InstStat(80,272,47,174,0,3,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK1,InstStat(10,44,12,53,0,1,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK2,InstStat(4,108,21,618,0,0,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK3,InstStat(18,56,17,72,0,0,clockPeriod)});

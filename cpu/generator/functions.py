@@ -225,6 +225,7 @@ function = [
     ["isc/fs/ext4/ext4.cc", "builtin_startup",                              ISC__FSA__EXT4, ISC__START_SLET],
     ["isc/slet/statdir.cc", "Runtime::addSlet<SimpleSSD::ISC::StatdirAPP>", ISC__RUNTIME, ISC__ADD_SLET__STATDIR],
     ["isc/slet/statdir.cc", "builtin_startup",                              ISC__SLET__STATDIR, ISC__START_SLET],
+    ["isc/slet/statdir.cc", "inodeFilter",                                  ISC__SLET__STATDIR, ISC__TASK1],
     ["isc/slet/md5.cc", "Runtime::addSlet<SimpleSSD::ISC::MD5APP>",         ISC__RUNTIME, ISC__ADD_SLET__MD5],
     ["isc/slet/md5.cc", "builtin_startup",                                  ISC__SLET__MD5, ISC__START_SLET],
     ["isc/slet/md5.cc", "MD5APP::md5sum",                                   ISC__SLET__MD5, ISC__TASK1],
