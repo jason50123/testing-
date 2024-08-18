@@ -43,6 +43,7 @@ bool Config::setConfig(const char *name, const char *value) {
 
   if (MATCH_NAME(NAME_CLOCK)) {
     clock = strtoul(value, nullptr, 10);
+    debugprint(LOG_CPU, "Clockspeed: %lu Hz", clock);
   }
   else if (MATCH_NAME(NAME_CORE_HIL)) {
     hilCore = (uint32_t)strtoul(value, nullptr, 10);
