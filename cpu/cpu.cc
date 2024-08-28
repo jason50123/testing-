@@ -314,6 +314,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.insert({ISC__SLET, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET__STATDIR, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET__MD5, std::unordered_map<uint16_t, InstStat>()});
+  cpi.insert({ISC__SLET__GREP, std::unordered_map<uint16_t, InstStat>()});
   assert(cpi.size() == NAMESPACE::TOTAL_NAMESPACES || !"Some CPIs are missing");
 
   // clang-format off
@@ -324,7 +325,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(NVME__NAMESPACE)->second.insert({ISC__SET,InstStat(89,372,57,136,0,1,clockPeriod)});
   cpi.find(NVME__SUBSYSTEM)->second.insert({ISC__SET,InstStat(45,180,32,148,0,2,clockPeriod)});
   cpi.find(HIL)->second.insert({ISC__SET,InstStat(102,464,91,213,0,4,clockPeriod)});
-  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__INIT,InstStat(35,196,46,235,0,1,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__INIT,InstStat(43,236,59,260,0,5,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_SUPER,InstStat(11,24,6,30,0,1,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_GROUP,InstStat(18,112,37,61,0,1,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_IMAP,InstStat(15,48,8,61,0,0,clockPeriod)});
@@ -333,7 +334,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_EXTENT_SIZE,InstStat(24,88,18,72,0,3,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_EXTENT_INTERNAL,InstStat(25,116,30,84,0,2,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_EXTENT,InstStat(32,96,20,81,0,0,clockPeriod)});
-  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__DIR_SEARCH_FILE,InstStat(42,120,22,108,0,1,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__DIR_SEARCH_FILE,InstStat(61,228,50,162,0,1,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__NAMEI,InstStat(23,56,13,68,0,2,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__GET_INODE,InstStat(17,68,11,48,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__GET_EXTENT,InstStat(17,60,10,51,0,0,clockPeriod)});
@@ -351,6 +352,10 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK2,InstStat(4,108,21,618,0,0,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK3,InstStat(18,56,17,72,0,0,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK4,InstStat(3,32,9,24,0,2,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__GREP,InstStat(11,44,13,36,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__GREP)->second.insert({ISC__START_SLET,InstStat(30,108,20,93,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK1,InstStat(23,40,16,73,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK2,InstStat(9,28,3,27,0,0,clockPeriod)});
 
 // check values defines in functions.py match those defined in def.hh
 #define ERR_MSG "Unexpected NAMESPACE ID"
@@ -373,7 +378,8 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   static_assert(NAMESPACE::ISC__SLET == 16, ERR_MSG);
   static_assert(NAMESPACE::ISC__SLET__STATDIR == 17, ERR_MSG);
   static_assert(NAMESPACE::ISC__SLET__MD5 == 18, ERR_MSG);
-  static_assert(NAMESPACE::TOTAL_NAMESPACES == 19, ERR_MSG);
+  static_assert(NAMESPACE::ISC__SLET__GREP == 19, ERR_MSG);
+  static_assert(NAMESPACE::TOTAL_NAMESPACES == 20, ERR_MSG);
 #undef ERR_MSG
 #define ERR_MSG "Unexpected FUNCTION ID"
   static_assert(FUNCTION::READ == 0, ERR_MSG);
@@ -441,7 +447,8 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   static_assert(FUNCTION::ISC__ADD_SLET__EXT4 == 62, ERR_MSG);
   static_assert(FUNCTION::ISC__ADD_SLET__STATDIR == 63, ERR_MSG);
   static_assert(FUNCTION::ISC__ADD_SLET__MD5 == 64, ERR_MSG);
-  static_assert(FUNCTION::TOTAL_FUNCTIONS == 65, ERR_MSG);
+  static_assert(FUNCTION::ISC__ADD_SLET__GREP == 65, ERR_MSG);
+  static_assert(FUNCTION::TOTAL_FUNCTIONS == 66, ERR_MSG);
 #undef ERR_MSG
   } // used for folding this section
   // clang-format on

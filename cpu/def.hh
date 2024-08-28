@@ -50,6 +50,7 @@ typedef enum : uint16_t {
   ISC__SLET,
   ISC__SLET__STATDIR,
   ISC__SLET__MD5,
+  ISC__SLET__GREP,
 
   TOTAL_NAMESPACES
 } NAMESPACE;
@@ -148,6 +149,7 @@ typedef enum : uint16_t {
   ISC__ADD_SLET__EXT4,
   ISC__ADD_SLET__STATDIR,
   ISC__ADD_SLET__MD5,
+  ISC__ADD_SLET__GREP,
 
   TOTAL_FUNCTIONS,
 } FUNCTION;

@@ -170,6 +170,7 @@ ISC__FSA__EXT4      = 15
 ISC__SLET           = 16
 ISC__SLET__STATDIR  = 17
 ISC__SLET__MD5      = 18
+ISC__SLET__GREP     = 19
 
 # FCT
 FCT_IDX = 41
@@ -197,6 +198,7 @@ FCT_IDX, ISC__TASK5                 = FCT_IDX + 1, FCT_IDX
 FCT_IDX, ISC__ADD_SLET__EXT4        = FCT_IDX + 1, FCT_IDX
 FCT_IDX, ISC__ADD_SLET__STATDIR     = FCT_IDX + 1, FCT_IDX
 FCT_IDX, ISC__ADD_SLET__MD5         = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__ADD_SLET__GREP        = FCT_IDX + 1, FCT_IDX
 
 function = [
     ["hil/nvme/namespace.cc", "Namespace::isc_get",      HIL_NVMe_Namespace, ISC_GET],
@@ -232,4 +234,8 @@ function = [
     ["isc/slet/md5.cc", "MD5Transform",                                     ISC__SLET__MD5, ISC__TASK2],
     ["isc/slet/md5.cc", "MD5Update",                                        ISC__SLET__MD5, ISC__TASK3],
     ["isc/slet/md5.cc", "Encode",                                           ISC__SLET__MD5, ISC__TASK4],
+    ["isc/slet/grep.cc", "Runtime::addSlet<SimpleSSD::ISC::GrepAPP>",       ISC__RUNTIME, ISC__ADD_SLET__GREP],
+    ["isc/slet/grep.cc", "builtin_startup",                                 ISC__SLET__GREP, ISC__START_SLET],
+    ["isc/slet/grep.cc", "GrepAPP::grep",                                   ISC__SLET__GREP, ISC__TASK1],
+    ["isc/slet/grep.cc", "GrepAPP::strstr",                                 ISC__SLET__GREP, ISC__TASK2],
 ]
