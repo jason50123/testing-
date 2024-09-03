@@ -1,7 +1,7 @@
 #!/bin/bash
 cd $(dirname $(realpath $0))
 
-cpis="$(python2 generator/generate.py | tr '\n' ' ' | tr --delete ' ' | sed 's/cpi.find/\ncpi.find/g')"
+cpis="$(python3 generator/generate.py | tr '\n' ' ' | tr --delete ' ' | sed 's/cpi.find/\ncpi.find/g')"
 defs="$(cat def.hh | tr -s '\n')"
 
 # the enum parser and cpi table converter

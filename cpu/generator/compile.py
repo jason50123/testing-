@@ -39,7 +39,7 @@ def compile(cxx, src, dst, rootpath):
     output = proc.communicate()[0]
 
     if proc.returncode:
-        print output
+        print(output)
 
     return proc.returncode
 
@@ -57,7 +57,7 @@ def disassemble(objdump, src, dst):
     output = proc.communicate()[0]
 
     if proc.returncode == 0:
-        with open(dst, 'w')  as f:
+        with open(dst, 'wb')  as f:
             f.write(output)
 
     return proc.returncode
