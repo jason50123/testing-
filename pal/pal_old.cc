@@ -111,6 +111,8 @@ void PALOLD::read(Request &req, uint64_t &tick) {
     finishedAt = MAX(finishedAt, cmd.finished);
   }
 
+  debugprint(LOG_PAL_OLD, "READ Time: %lu (%lu - %lu)", finishedAt - tick, tick,
+             finishedAt);
   tick = finishedAt;
 }
 
