@@ -31,6 +31,7 @@
 #include "isc/slet/grep.hh"
 #include "isc/slet/md5.hh"
 #include "isc/slet/statdir.hh"
+#include "isc/slet/stats32.hh"
 
 using SimpleSSD::ISC::byte;
 
@@ -102,7 +103,8 @@ void HIL::isc_set(Request &req) {
       if (ISC_STS_FAIL == ISC::Runtime::addSlet<ISC::Ext4>(tick, ctx) ||
           ISC_STS_FAIL == ISC::Runtime::addSlet<ISC::StatdirAPP>(tick, ctx) ||
           ISC_STS_FAIL == ISC::Runtime::addSlet<ISC::MD5APP>(tick, ctx) ||
-          ISC_STS_FAIL == ISC::Runtime::addSlet<ISC::GrepAPP>(tick, ctx))
+          ISC_STS_FAIL == ISC::Runtime::addSlet<ISC::GrepAPP>(tick, ctx) ||
+          ISC_STS_FAIL == ISC::Runtime::addSlet<ISC::Stats32APP>(tick, ctx))
         panic("Failed to setup predefined slets");
 
       tick += applyLatency(CPU::ISC__RUNTIME, CPU::ISC__ADD_SLET__EXT4);

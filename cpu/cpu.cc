@@ -315,6 +315,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.insert({ISC__SLET__STATDIR, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET__MD5, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET__GREP, std::unordered_map<uint16_t, InstStat>()});
+  cpi.insert({ISC__SLET__STATS32, std::unordered_map<uint16_t, InstStat>()});
   assert(cpi.size() == NAMESPACE::TOTAL_NAMESPACES || !"Some CPIs are missing");
 
   // clang-format off
@@ -356,6 +357,9 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(ISC__SLET__GREP)->second.insert({ISC__START_SLET,InstStat(30,108,20,96,0,0,clockPeriod)});
   cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK1,InstStat(27,44,17,84,0,1,clockPeriod)});
   cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK2,InstStat(12,40,9,43,0,1,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__STATS32,InstStat(11,44,13,36,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__STATS32)->second.insert({ISC__START_SLET,InstStat(34,88,18,118,0,3,clockPeriod)});
+  cpi.find(ISC__SLET__STATS32)->second.insert({ISC__TASK1,InstStat(3,16,3,14,0,0,clockPeriod)});
 
 // check values defines in functions.py match those defined in def.hh
 #define ERR_MSG "Unexpected NAMESPACE ID"
@@ -379,7 +383,8 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   static_assert(NAMESPACE::ISC__SLET__STATDIR == 17, ERR_MSG);
   static_assert(NAMESPACE::ISC__SLET__MD5 == 18, ERR_MSG);
   static_assert(NAMESPACE::ISC__SLET__GREP == 19, ERR_MSG);
-  static_assert(NAMESPACE::TOTAL_NAMESPACES == 20, ERR_MSG);
+  static_assert(NAMESPACE::ISC__SLET__STATS32 == 20, ERR_MSG);
+  static_assert(NAMESPACE::TOTAL_NAMESPACES == 21, ERR_MSG);
 #undef ERR_MSG
 #define ERR_MSG "Unexpected FUNCTION ID"
   static_assert(FUNCTION::READ == 0, ERR_MSG);
@@ -448,7 +453,8 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   static_assert(FUNCTION::ISC__ADD_SLET__STATDIR == 63, ERR_MSG);
   static_assert(FUNCTION::ISC__ADD_SLET__MD5 == 64, ERR_MSG);
   static_assert(FUNCTION::ISC__ADD_SLET__GREP == 65, ERR_MSG);
-  static_assert(FUNCTION::TOTAL_FUNCTIONS == 66, ERR_MSG);
+  static_assert(FUNCTION::ISC__ADD_SLET__STATS32 == 66, ERR_MSG);
+  static_assert(FUNCTION::TOTAL_FUNCTIONS == 67, ERR_MSG);
 #undef ERR_MSG
   } // used for folding this section
   // clang-format on
