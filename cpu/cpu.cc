@@ -358,7 +358,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK1,InstStat(27,44,17,84,0,1,clockPeriod)});
   cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK2,InstStat(12,40,9,43,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__STATS32,InstStat(11,44,13,36,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__STATS32)->second.insert({ISC__START_SLET,InstStat(34,88,18,118,0,3,clockPeriod)});
+  cpi.find(ISC__SLET__STATS32)->second.insert({ISC__START_SLET,InstStat(95,336,53,238,0,6,clockPeriod)});
   cpi.find(ISC__SLET__STATS32)->second.insert({ISC__TASK1,InstStat(3,16,3,14,0,0,clockPeriod)});
 
 // check values defines in functions.py match those defined in def.hh
