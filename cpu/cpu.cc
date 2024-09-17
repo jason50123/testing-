@@ -316,6 +316,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.insert({ISC__SLET__MD5, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET__GREP, std::unordered_map<uint16_t, InstStat>()});
   cpi.insert({ISC__SLET__STATS32, std::unordered_map<uint16_t, InstStat>()});
+  cpi.insert({ISC__SLET__STATS64, std::unordered_map<uint16_t, InstStat>()});
   assert(cpi.size() == NAMESPACE::TOTAL_NAMESPACES || !"Some CPIs are missing");
 
   // clang-format off
@@ -325,7 +326,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(HIL)->second.insert({ISC__GET,InstStat(44,176,39,92,0,2,clockPeriod)});
   cpi.find(NVME__NAMESPACE)->second.insert({ISC__SET,InstStat(89,372,57,136,0,1,clockPeriod)});
   cpi.find(NVME__SUBSYSTEM)->second.insert({ISC__SET,InstStat(45,180,32,148,0,2,clockPeriod)});
-  cpi.find(HIL)->second.insert({ISC__SET,InstStat(115,532,104,244,0,4,clockPeriod)});
+  cpi.find(HIL)->second.insert({ISC__SET,InstStat(127,596,116,271,0,3,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__INIT,InstStat(43,236,59,261,0,4,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_SUPER,InstStat(11,24,6,31,0,0,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_GROUP,InstStat(18,112,37,62,0,0,clockPeriod)});
@@ -338,28 +339,31 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__DIR_SEARCH_FILE,InstStat(61,228,50,163,0,2,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__NAMEI,InstStat(23,56,13,69,0,3,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__GET_INODE,InstStat(17,68,11,49,0,0,clockPeriod)});
-  cpi.find(ISC__RUNTIME)->second.insert({ISC__GET_EXTENT,InstStat(17,60,10,52,0,1,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__GET_EXTENT,InstStat(19,92,22,50,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__START_SLET,InstStat(15,44,7,38,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__SET_OPT,InstStat(11,36,6,27,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__GET_OPT,InstStat(11,36,6,27,0,0,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__EXT4,InstStat(8,28,9,25,0,0,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__START_SLET,InstStat(1,0,0,1,0,0,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__STATDIR,InstStat(13,44,13,39,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__STATDIR)->second.insert({ISC__START_SLET,InstStat(21,68,17,81,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__STATDIR)->second.insert({ISC__START_SLET,InstStat(23,100,21,83,0,2,clockPeriod)});
   cpi.find(ISC__SLET__STATDIR)->second.insert({ISC__TASK1,InstStat(17,84,16,48,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__MD5,InstStat(11,44,27,39,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__MD5)->second.insert({ISC__START_SLET,InstStat(90,316,50,197,0,3,clockPeriod)});
+  cpi.find(ISC__SLET__MD5)->second.insert({ISC__START_SLET,InstStat(90,328,52,200,0,3,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK1,InstStat(10,44,12,54,0,0,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK2,InstStat(4,108,21,618,0,0,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK3,InstStat(18,56,17,75,0,1,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK4,InstStat(3,32,9,25,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__GREP,InstStat(11,44,13,36,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__GREP)->second.insert({ISC__START_SLET,InstStat(30,108,20,96,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__GREP)->second.insert({ISC__START_SLET,InstStat(30,116,22,95,0,0,clockPeriod)});
   cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK1,InstStat(27,44,17,84,0,1,clockPeriod)});
   cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK2,InstStat(12,40,9,43,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__STATS32,InstStat(11,44,13,36,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__STATS32)->second.insert({ISC__START_SLET,InstStat(95,336,53,238,0,6,clockPeriod)});
+  cpi.find(ISC__SLET__STATS32)->second.insert({ISC__START_SLET,InstStat(94,336,54,237,0,5,clockPeriod)});
   cpi.find(ISC__SLET__STATS32)->second.insert({ISC__TASK1,InstStat(3,16,3,14,0,0,clockPeriod)});
+  cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__STATS64,InstStat(11,44,13,36,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__STATS64)->second.insert({ISC__START_SLET,InstStat(94,336,54,262,0,5,clockPeriod)});
+  cpi.find(ISC__SLET__STATS64)->second.insert({ISC__TASK1,InstStat(3,20,3,14,0,0,clockPeriod)});
 
 // check values defines in functions.py match those defined in def.hh
 #define ERR_MSG "Unexpected NAMESPACE ID"
@@ -384,7 +388,8 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   static_assert(NAMESPACE::ISC__SLET__MD5 == 18, ERR_MSG);
   static_assert(NAMESPACE::ISC__SLET__GREP == 19, ERR_MSG);
   static_assert(NAMESPACE::ISC__SLET__STATS32 == 20, ERR_MSG);
-  static_assert(NAMESPACE::TOTAL_NAMESPACES == 21, ERR_MSG);
+  static_assert(NAMESPACE::ISC__SLET__STATS64 == 21, ERR_MSG);
+  static_assert(NAMESPACE::TOTAL_NAMESPACES == 22, ERR_MSG);
 #undef ERR_MSG
 #define ERR_MSG "Unexpected FUNCTION ID"
   static_assert(FUNCTION::READ == 0, ERR_MSG);
@@ -454,7 +459,8 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   static_assert(FUNCTION::ISC__ADD_SLET__MD5 == 64, ERR_MSG);
   static_assert(FUNCTION::ISC__ADD_SLET__GREP == 65, ERR_MSG);
   static_assert(FUNCTION::ISC__ADD_SLET__STATS32 == 66, ERR_MSG);
-  static_assert(FUNCTION::TOTAL_FUNCTIONS == 67, ERR_MSG);
+  static_assert(FUNCTION::ISC__ADD_SLET__STATS64 == 67, ERR_MSG);
+  static_assert(FUNCTION::TOTAL_FUNCTIONS == 68, ERR_MSG);
 #undef ERR_MSG
   } // used for folding this section
   // clang-format on

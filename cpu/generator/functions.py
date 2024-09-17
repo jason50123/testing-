@@ -172,6 +172,7 @@ ISC__SLET__STATDIR  = 17
 ISC__SLET__MD5      = 18
 ISC__SLET__GREP     = 19
 ISC__SLET__STATS32  = 20
+ISC__SLET__STATS64  = 21
 
 # FCT
 FCT_IDX = 41
@@ -201,6 +202,7 @@ FCT_IDX, ISC__ADD_SLET__STATDIR     = FCT_IDX + 1, FCT_IDX
 FCT_IDX, ISC__ADD_SLET__MD5         = FCT_IDX + 1, FCT_IDX
 FCT_IDX, ISC__ADD_SLET__GREP        = FCT_IDX + 1, FCT_IDX
 FCT_IDX, ISC__ADD_SLET__STATS32     = FCT_IDX + 1, FCT_IDX
+FCT_IDX, ISC__ADD_SLET__STATS64     = FCT_IDX + 1, FCT_IDX
 
 function = [
     ["hil/nvme/namespace.cc", "Namespace::isc_get",      HIL_NVMe_Namespace, ISC_GET],
@@ -243,4 +245,7 @@ function = [
     ["isc/slet/stats32.cc", "Runtime::addSlet<SimpleSSD::ISC::Stats32APP>", ISC__RUNTIME, ISC__ADD_SLET__STATS32],
     ["isc/slet/stats32.cc", "builtin_startup",                              ISC__SLET__STATS32, ISC__START_SLET],
     ["isc/slet/stats32.cc", "Stats32APP::sum",                              ISC__SLET__STATS32, ISC__TASK1],
+    ["isc/slet/stats64.cc", "Runtime::addSlet<SimpleSSD::ISC::Stats64APP>", ISC__RUNTIME, ISC__ADD_SLET__STATS64],
+    ["isc/slet/stats64.cc", "builtin_startup",                              ISC__SLET__STATS64, ISC__START_SLET],
+    ["isc/slet/stats64.cc", "Stats64APP::sum",                              ISC__SLET__STATS64, ISC__TASK1],
 ]

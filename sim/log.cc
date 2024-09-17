@@ -117,6 +117,7 @@ const std::string logName[LOG_NUM] = {
     "ISC::SLET::MD5",           //!< LOG_ISC_SLET_MD5
     "ISC::SLET::GREP",          //!< LOG_ISC_SLET_GREP
     "ISC::SLET::STATS32",       //!< LOG_ISC_SLET_STATS32
+    "ISC::SLET::STATS64",       //!< LOG_ISC_SLET_STATS64
     "ISC::FSA",                 //!< LOG_ISC_FSA
     "ISC::FSA::EXT4",           //!< LOG_ISC_EXT4
 };
