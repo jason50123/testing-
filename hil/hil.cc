@@ -123,6 +123,7 @@ void HIL::isc_set(Request &req) {
     else if (ISC_SUBCMD_IS(slba, ISC_SUBCMD_SLET_OPT)) {
       auto id = ISC_SUBCMD_OPT(slba);
       auto data = ((NVMe::IOContext *)hReq->context)->buffer;
+      Utils::pipe2xxd("setOpt", data, hReq->length, NULL);
 
       // fixme: handle calloc fails
       char *key = (char *)calloc(1, ISC_KEY_LEN + 1);

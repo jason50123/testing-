@@ -630,12 +630,17 @@ void Namespace::isc_set(SQEntryWrapper &req, RequestFunction &func) {
 
   if (!err) {
     DMAFunction doRead = [this](uint64_t tick, void *context) {
-      DMAFunction dmaDone = [this](uint64_t tick, void *context) {
+      static DMAFunction dmaDone;
+      dmaDone = [this](uint64_t tick, void *context) {
         IOContext *pContext = (IOContext *)context;
 
         pContext->beginAt++;
 
-        if (pContext->beginAt == 2) {
+        if (pContext->beginAt == 1) {
+          pParent->isc_set(this, pContext->slba, pContext->nlb, dmaDone,
+                           context);
+        }
+        else if (pContext->beginAt == 2) {
           debugprint(
               LOG_HIL_NVME,
               "NVM     | ISC-SET | CQ %u | SQ %u:%u | CID %u | NSID %-5d | "
@@ -668,8 +673,6 @@ void Namespace::isc_set(SQEntryWrapper &req, RequestFunction &func) {
 
       pContext->dma->read(0, pContext->nlb * info.lbaSize, pContext->buffer,
                           dmaDone, context);
-
-      pParent->isc_set(this, pContext->slba, pContext->nlb, dmaDone, context);
     };
 
     IOContext *pContext = new IOContext(func, resp);
