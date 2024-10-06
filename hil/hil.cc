@@ -125,10 +125,10 @@ void HIL::isc_set(Request &req) {
       auto data = ((NVMe::IOContext *)hReq->context)->buffer;
 
       // fixme: handle calloc fails
-      char *key = (char *)calloc(1, ISC_KEY_LEN);
+      char *key = (char *)calloc(1, ISC_KEY_LEN + 1);
       memcpy(key, data, ISC_KEY_LEN);
 
-      byte *val = (byte *)calloc(1, ISC_VAL_LEN(hReq->length));
+      byte *val = (byte *)calloc(1, ISC_VAL_LEN(hReq->length) + 1);
       memcpy(val, data + ISC_KEY_LEN, ISC_VAL_LEN(hReq->length));
 
       ISC::Runtime::setOpt(id, key, val, tick, ctx);
