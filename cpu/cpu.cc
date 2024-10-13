@@ -324,9 +324,9 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(NVME__NAMESPACE)->second.insert({ISC__GET,InstStat(98,420,56,181,0,2,clockPeriod)});
   cpi.find(NVME__SUBSYSTEM)->second.insert({ISC__GET,InstStat(39,144,28,138,0,1,clockPeriod)});
   cpi.find(HIL)->second.insert({ISC__GET,InstStat(44,176,39,92,0,2,clockPeriod)});
-  cpi.find(NVME__NAMESPACE)->second.insert({ISC__SET,InstStat(89,372,57,136,0,1,clockPeriod)});
+  cpi.find(NVME__NAMESPACE)->second.insert({ISC__SET,InstStat(92,392,66,146,0,3,clockPeriod)});
   cpi.find(NVME__SUBSYSTEM)->second.insert({ISC__SET,InstStat(45,180,32,148,0,2,clockPeriod)});
-  cpi.find(HIL)->second.insert({ISC__SET,InstStat(127,596,116,271,0,3,clockPeriod)});
+  cpi.find(HIL)->second.insert({ISC__SET,InstStat(142,672,130,311,0,5,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__INIT,InstStat(43,236,59,261,0,4,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_SUPER,InstStat(11,24,6,31,0,0,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_GROUP,InstStat(18,112,37,62,0,0,clockPeriod)});
@@ -349,20 +349,20 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(ISC__SLET__STATDIR)->second.insert({ISC__START_SLET,InstStat(23,100,21,83,0,2,clockPeriod)});
   cpi.find(ISC__SLET__STATDIR)->second.insert({ISC__TASK1,InstStat(17,84,16,48,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__MD5,InstStat(11,44,27,39,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__MD5)->second.insert({ISC__START_SLET,InstStat(90,328,52,200,0,3,clockPeriod)});
+  cpi.find(ISC__SLET__MD5)->second.insert({ISC__START_SLET,InstStat(111,420,64,251,0,5,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK1,InstStat(10,44,12,54,0,0,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK2,InstStat(4,108,21,618,0,0,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK3,InstStat(18,56,17,75,0,1,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK4,InstStat(3,32,9,25,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__GREP,InstStat(11,44,13,36,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__GREP)->second.insert({ISC__START_SLET,InstStat(30,116,22,95,0,0,clockPeriod)});
+  cpi.find(ISC__SLET__GREP)->second.insert({ISC__START_SLET,InstStat(30,108,20,94,0,1,clockPeriod)});
   cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK1,InstStat(27,44,17,84,0,1,clockPeriod)});
   cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK2,InstStat(12,40,9,43,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__STATS32,InstStat(11,44,13,36,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__STATS32)->second.insert({ISC__START_SLET,InstStat(94,336,54,237,0,5,clockPeriod)});
+  cpi.find(ISC__SLET__STATS32)->second.insert({ISC__START_SLET,InstStat(118,424,68,294,0,7,clockPeriod)});
   cpi.find(ISC__SLET__STATS32)->second.insert({ISC__TASK1,InstStat(3,16,3,14,0,0,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__STATS64,InstStat(11,44,13,36,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__STATS64)->second.insert({ISC__START_SLET,InstStat(94,336,54,262,0,5,clockPeriod)});
+  cpi.find(ISC__SLET__STATS64)->second.insert({ISC__START_SLET,InstStat(119,424,69,323,0,7,clockPeriod)});
   cpi.find(ISC__SLET__STATS64)->second.insert({ISC__TASK1,InstStat(3,20,3,14,0,0,clockPeriod)});
 
 // check values defines in functions.py match those defined in def.hh
