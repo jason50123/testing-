@@ -355,7 +355,7 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK3,InstStat(18,56,17,75,0,1,clockPeriod)});
   cpi.find(ISC__SLET__MD5)->second.insert({ISC__TASK4,InstStat(3,32,9,25,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__GREP,InstStat(11,44,13,36,0,0,clockPeriod)});
-  cpi.find(ISC__SLET__GREP)->second.insert({ISC__START_SLET,InstStat(30,108,20,94,0,1,clockPeriod)});
+  cpi.find(ISC__SLET__GREP)->second.insert({ISC__START_SLET,InstStat(121,464,69,286,0,2,clockPeriod)});
   cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK1,InstStat(27,44,17,84,0,1,clockPeriod)});
   cpi.find(ISC__SLET__GREP)->second.insert({ISC__TASK2,InstStat(12,40,9,43,0,1,clockPeriod)});
   cpi.find(ISC__RUNTIME)->second.insert({ISC__ADD_SLET__STATS32,InstStat(11,44,13,36,0,0,clockPeriod)});
