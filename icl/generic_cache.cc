@@ -422,10 +422,16 @@ bool GenericCache::read(Request &req, uint64_t &tick) {
         if (prefetchMode == MODE_ALL || !bSuperPage) {
           endLCA = beginLCA + lineCountInMaxIO;
           prefetchTrigger = beginLCA + lineCountInMaxIO / 2;
+          debugprint(LOG_ICL_GENERIC_CACHE,
+                     "Update prefetchTrigger to %lu (%lux%lu)", prefetchTrigger,
+                     parallelIO, lineCountInSuperPage);
         }
         else {
           endLCA = beginLCA + lineCountInSuperPage;
           prefetchTrigger = beginLCA + lineCountInSuperPage / 2;
+          debugprint(LOG_ICL_GENERIC_CACHE,
+                     "Update prefetchTrigger to %lu (%lu)", prefetchTrigger,
+                     lineCountInSuperPage);
         }
 
         lastPrefetched = endLCA;

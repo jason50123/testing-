@@ -45,6 +45,7 @@ PAL::PAL(ConfigReader &c) : conf(c) {
   if (superblock & INDEX_CHANNEL) {
     param.superPageSize *= param.channel;
     value[0] = param.channel;
+    debugprint(LOG_PAL, "Superpage x %u Channel", param.channel);
   }
   else {
     param.superBlock *= param.channel;
@@ -54,6 +55,7 @@ PAL::PAL(ConfigReader &c) : conf(c) {
   if (superblock & INDEX_PACKAGE) {
     param.superPageSize *= param.package;
     value[1] = param.package;
+    debugprint(LOG_PAL, "Superpage x %u Package", param.package);
   }
   else {
     param.superBlock *= param.package;
@@ -63,6 +65,7 @@ PAL::PAL(ConfigReader &c) : conf(c) {
   if (superblock & INDEX_DIE) {
     param.superPageSize *= param.die;
     value[2] = param.die;
+    debugprint(LOG_PAL, "Superpage x %u Die", param.die);
   }
   else {
     param.superBlock *= param.die;
@@ -73,6 +76,7 @@ PAL::PAL(ConfigReader &c) : conf(c) {
       (superblock & INDEX_PLANE)) {
     param.superPageSize *= param.plane;
     value[3] = param.plane;
+    debugprint(LOG_PAL, "Superpage x %u Plane", param.plane);
   }
   else {
     param.superBlock *= param.plane;
@@ -84,6 +88,7 @@ PAL::PAL(ConfigReader &c) : conf(c) {
   // TODO: If PAL revised, this code may not needed
   if (conf.readBoolean(CONFIG_PAL, NAND_USE_MULTI_PLANE_OP)) {
     param.pageInSuperPage /= param.plane;
+    debugprint(LOG_PAL, "Superpage / %u Plane", param.plane);
   }
 
   // Print super block information
