@@ -539,6 +539,8 @@ void Subsystem::isc_get(Namespace *ns, uint64_t slba, uint64_t nlblk,
   Request *hReq = new Request(dmaDone, ioCtx);
   DMAFunction doISC = [this, ns](uint64_t, void *hReq) {
     auto h = (Request *)hReq;
+
+    h->ns = ns;
     pHIL->isc_get(*h);
     req_record(RecordTypes::ISC_GET, (IOContext *)h->context,
                ns->getInfo()->lbaSize);
@@ -555,6 +557,8 @@ void Subsystem::isc_set(Namespace *ns, uint64_t slba, uint64_t nlblk,
   Request *hReq = new Request(dmaDone, ioCtx);
   DMAFunction doISC = [this, ns](uint64_t, void *hReq) {
     auto h = (Request *)hReq;
+
+    h->ns = ns;
     pHIL->isc_set(*h);
     req_record(RecordTypes::ISC_SET, (IOContext *)h->context,
                ns->getInfo()->lbaSize);

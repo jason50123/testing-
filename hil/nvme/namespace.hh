@@ -29,6 +29,8 @@
 #include "util/disk.hh"
 #include "util/simplessd.hh"
 
+#include "isc/sims/ftl.hh"
+
 namespace SimpleSSD {
 
 namespace HIL {
@@ -79,6 +81,8 @@ class CompareContext : public IOContext {
 };
 
 class Namespace {
+  friend ISC::SIM::FTL;
+
  public:
   typedef struct _Information {
     uint64_t size;                         //!< NSZE

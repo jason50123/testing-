@@ -46,6 +46,8 @@ typedef struct _Request {
   uint64_t length;
   LPNRange range;
 
+  const void *ns;
+
   uint64_t finishedAt;
   DMAFunction function;
   void *context;

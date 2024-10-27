@@ -272,13 +272,17 @@ uint32_t GenericCache::getValidWay(uint64_t lca, uint64_t &tick) {
 }
 
 void GenericCache::checkSequential(Request &req, SequentialDetect &data) {
-  if (data.lastRequest.reqID == req.reqID) {
-    data.lastRequest.range = req.range;
-    data.lastRequest.offset = req.offset;
-    data.lastRequest.length = req.length;
+  auto &lastReq = data.lastRequest;
 
-    return;
-  }
+  debugprint(LOG_ICL_GENERIC_CACHE, "SeqReq Checking...");
+  debugprint(LOG_ICL_GENERIC_CACHE,
+             "CURRENT | RID %lu-%lu | OFF+LEN %lu+%lu | RANGE %lu+%lu",
+             req.reqID, req.reqSubID, req.offset, req.length, req.range.slpn,
+             req.range.nlp);
+  debugprint(LOG_ICL_GENERIC_CACHE,
+             "PREVIOUS | RID %lu-%lu | OFF+LEN %lu+%lu | RANGE %lu+%lu",
+             lastReq.reqID, lastReq.reqSubID, lastReq.offset, lastReq.length,
+             lastReq.range.slpn, lastReq.range.nlp);
 
   if (data.lastRequest.range.slpn * lineSize + data.lastRequest.offset +
           data.lastRequest.length ==
@@ -396,6 +400,10 @@ bool GenericCache::read(Request &req, uint64_t &tick) {
         tick = tickBackup;
 
         goto ICL_GENERIC_CACHE_READ;
+      }
+      else {
+        debugprint(LOG_ICL_GENERIC_CACHE, "Prefetch disabled || %lu != %lu",
+                   req.range.slpn, prefetchTrigger);
       }
     }
     // We should read data from NVM

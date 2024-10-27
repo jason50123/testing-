@@ -164,7 +164,7 @@ void Namespace::setData(uint32_t id, Information *data) {
                       nsid);
     }
 
-    ISC::SIM::FTL::setImage(filename.c_str());
+    ISC::SIM::FTL::setImage(filename.c_str(), info.lbaSize);
   }
 
   allocated = true;

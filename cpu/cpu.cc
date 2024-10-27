@@ -322,16 +322,16 @@ CPU::CPU(ConfigReader &c) : conf(c), lastResetStat(0) {
   // clang-format off
   { // used for folding this section
   cpi.find(NVME__NAMESPACE)->second.insert({ISC__GET,InstStat(98,420,56,181,0,2,clockPeriod)});
-  cpi.find(NVME__SUBSYSTEM)->second.insert({ISC__GET,InstStat(39,144,28,138,0,1,clockPeriod)});
-  cpi.find(HIL)->second.insert({ISC__GET,InstStat(44,176,39,92,0,2,clockPeriod)});
+  cpi.find(NVME__SUBSYSTEM)->second.insert({ISC__GET,InstStat(39,148,29,138,0,1,clockPeriod)});
+  cpi.find(HIL)->second.insert({ISC__GET,InstStat(50,208,46,97,0,2,clockPeriod)});
   cpi.find(NVME__NAMESPACE)->second.insert({ISC__SET,InstStat(92,392,66,146,0,3,clockPeriod)});
-  cpi.find(NVME__SUBSYSTEM)->second.insert({ISC__SET,InstStat(45,180,32,148,0,2,clockPeriod)});
-  cpi.find(HIL)->second.insert({ISC__SET,InstStat(142,672,130,311,0,5,clockPeriod)});
-  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__INIT,InstStat(43,236,59,261,0,4,clockPeriod)});
+  cpi.find(NVME__SUBSYSTEM)->second.insert({ISC__SET,InstStat(45,184,33,148,0,2,clockPeriod)});
+  cpi.find(HIL)->second.insert({ISC__SET,InstStat(148,704,137,316,0,5,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__INIT,InstStat(43,236,61,261,0,5,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_SUPER,InstStat(11,24,6,31,0,0,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_GROUP,InstStat(18,112,37,62,0,0,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_IMAP,InstStat(15,48,8,62,0,1,clockPeriod)});
-  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_INODE,InstStat(28,116,16,91,0,0,clockPeriod)});
+  cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_INODE,InstStat(65,212,31,192,0,2,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_INODE_PARENT,InstStat(18,88,17,60,0,1,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_EXTENT_SIZE,InstStat(24,88,18,73,0,2,clockPeriod)});
   cpi.find(ISC__FSA__EXT4)->second.insert({ISC__GET_EXTENT_INTERNAL,InstStat(25,116,30,85,0,1,clockPeriod)});

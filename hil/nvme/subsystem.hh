@@ -23,6 +23,8 @@
 #include "hil/hil.hh"
 #include "hil/nvme/abstract_subsystem.hh"
 
+#include "isc/sims/ftl.hh"
+
 namespace SimpleSSD {
 
 namespace HIL {
@@ -30,6 +32,8 @@ namespace HIL {
 namespace NVMe {
 
 class Subsystem : public AbstractSubsystem {
+  friend ISC::SIM::FTL;
+
  protected:
   HIL *pHIL;
 
