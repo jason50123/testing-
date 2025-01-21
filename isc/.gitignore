@@ -1,0 +1,32 @@
+# tmp files
+tmp/
+**/*.tmp
+build/
+**/test/
+!/test
+.cache
+old/
+bak/
+
+# bin files
+**/*.o
+**/*.out
+bin/
+**/*.bin
+
+# log files
+logs/
+*.log
+
+# docs
+**/*.pdf
+
+# workspace configs
+CHANGELOG.md
+.TODO
+**/compile_flags.txt
+.vscode
+*.code-workspace
+.stignore
+
+*.ods*
