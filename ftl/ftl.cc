@@ -66,7 +66,8 @@ FTL::~FTL() {
 }
 
 void FTL::read(Request &req, uint64_t &tick) {
-  debugprint(LOG_FTL, "READ  | LPN %" PRIu64, req.lpn);
+  debugprint(LOG_FTL, "READ  | LPN %" PRIu64 " + %lu", req.lpn,
+             req.iclReq.range.slpn);
 
   pFTL->read(req, tick);
 

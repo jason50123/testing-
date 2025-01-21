@@ -83,6 +83,8 @@ typedef struct _Request {
   uint64_t lpn;
   Bitset ioFlag;
 
+  ICL::Request iclReq;
+
   _Request(uint32_t);
   _Request(uint32_t, ICL::Request &);
 } Request;
@@ -97,6 +99,8 @@ typedef struct _Request {
   uint32_t blockIndex;
   uint32_t pageIndex;
   Bitset ioFlag;
+
+  FTL::Request ftlReq;
 
   _Request(uint32_t);
   _Request(FTL::Request &);

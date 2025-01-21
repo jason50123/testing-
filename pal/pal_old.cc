@@ -111,8 +111,8 @@ void PALOLD::read(Request &req, uint64_t &tick) {
     finishedAt = MAX(finishedAt, cmd.finished);
   }
 
-  debugprint(LOG_PAL_OLD, "READ Time: %lu (%lu - %lu)", finishedAt - tick, tick,
-             finishedAt);
+  debugprint(LOG_PAL_OLD, "READ LCA %d | %lu + %lu = %lu",
+             req.ftlReq.iclReq.range.slpn, tick, finishedAt - tick, finishedAt);
   tick = finishedAt;
 }
 
@@ -183,6 +183,7 @@ void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list) {
 
   list.clear();
 
+  addr.slpn = req.ftlReq.iclReq.range.slpn;
   addr.Plane = 0;
 
   for (int i = 0; i < 4; i++) {
@@ -324,6 +325,7 @@ void PALOLD::printCPDPBP(::CPDPBP &addr, const char *prefix) {
              "%-5s | C %5u | W %5u | D %5u | P %5u | B %5u | P %5u", prefix,
              addr.Channel, addr.Package, addr.Die, addr.Plane, addr.Block,
              addr.Page);
+  debugprint(LOG_PAL_OLD, "%-5s | LCA", prefix, addr.slpn);
 }
 
 void PALOLD::printPPN(Request &req, const char *prefix) {

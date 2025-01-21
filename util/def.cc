@@ -75,7 +75,8 @@ Request::_Request(uint32_t iocount, ICL::Request &r)
     : reqID(r.reqID),
       reqSubID(r.reqSubID),
       lpn(r.range.slpn / iocount),
-      ioFlag(iocount) {
+      ioFlag(iocount),
+      iclReq(r) {
   ioFlag.set(r.range.slpn % iocount);
 }
 
@@ -84,14 +85,20 @@ Request::_Request(uint32_t iocount, ICL::Request &r)
 namespace PAL {
 
 Request::_Request(uint32_t iocount)
-    : reqID(0), reqSubID(0), blockIndex(0), pageIndex(0), ioFlag(iocount) {}
+    : reqID(0),
+      reqSubID(0),
+      blockIndex(0),
+      pageIndex(0),
+      ioFlag(iocount),
+      ftlReq({}) {}
 
 Request::_Request(FTL::Request &r)
     : reqID(r.reqID),
       reqSubID(r.reqSubID),
       blockIndex(0),
       pageIndex(0),
-      ioFlag(r.ioFlag) {}
+      ioFlag(r.ioFlag),
+      ftlReq(r) {}
 
 }  // namespace PAL
 

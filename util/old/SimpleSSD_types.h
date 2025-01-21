@@ -221,6 +221,7 @@ typedef struct _CPDPBP
   uint32_t Plane;
   uint32_t Block;
   uint32_t Page;
+  uint64_t slpn;
 }CPDPBP;
 
 //===== PPN Request Info (would be in the queue) =====

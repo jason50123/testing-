@@ -303,6 +303,8 @@ void GenericCache::checkSequential(Request &req, SequentialDetect &data) {
     data.accessCounter = 0;
   }
 
+  debugprint(LOG_ICL_GENERIC_CACHE, "SeqReq Counter: %u %u", data.hitCounter,
+             data.accessCounter);
   data.lastRequest = req;
 }
 
