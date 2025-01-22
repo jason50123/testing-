@@ -30,3 +30,10 @@ CHANGELOG.md
 .stignore
 
 *.ods*
+
+# override some files listed in .gitignore of SimpleSSD
+!Makefile
+!scripts/Makefile
+!compile_flags.txt
+!test/googletest/googlemock/test
+!test/googletest/googletest/test

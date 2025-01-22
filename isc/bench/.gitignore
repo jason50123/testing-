@@ -1,0 +1,18 @@
+# ignore most files
+*
+!*/
+
+# except src codes
+!*.cc
+!*.h
+!*.hh
+
+# and static libs
+!*.a
+
+# and compile files
+!Makefile
+!compile_flags.txt
+
+# and self
+!.gitignore

@@ -1,0 +1,8 @@
+-I.
+-Itest/googletest/googletest/include
+-std=c++11
+-DISC_TEST=1
+-Wall
+-Wextra
+-Werror
+-lpthread
