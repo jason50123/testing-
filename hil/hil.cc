@@ -19,8 +19,10 @@
 
 #include "hil/hil.hh"
 #include "hil/nvme/namespace.hh"
+#include "hil/scheduler/fcfs_scheduler.hh"
 
 #include "util/algorithm.hh"
+#include "util/def.hh"
 
 #include "isc/sims/ftl.hh"
 
@@ -42,6 +44,7 @@ namespace HIL {
 
 HIL::HIL(ConfigReader &c) : conf(c), reqCount(0), lastScheduled(0) {
   pICL = new ICL::ICL(conf);
+  pScheduler = new FCFSScheduler();
   ISC::SIM::FTL::setCache(pICL);
 
   memset(&stat, 0, sizeof(stat));
@@ -51,6 +54,7 @@ HIL::HIL(ConfigReader &c) : conf(c), reqCount(0), lastScheduled(0) {
 
 HIL::~HIL() {
   delete pICL;
+  delete pScheduler;
 }
 
 void HIL::read(Request &req) {
@@ -65,6 +69,11 @@ void HIL::read(Request &req) {
                " + %" PRIu64,
                pReq->reqID, pReq->range.slpn, pReq->range.nlp, pReq->offset,
                pReq->length);
+
+    debugprint(LOG_HIL, "HIL | Submitting read request to scheduler");
+    pScheduler->submitRequest(*pReq);
+    pScheduler->tick(tick);
+    debugprint(LOG_HIL, "HIL | Read request submitted to scheduler");
 
     ICL::Request reqInternal(*pReq);
     pICL->read(reqInternal, tick);
@@ -193,7 +202,7 @@ void HIL::isc_get(Request &hReq) {
     hReq->finishedAt = tick;
     completionQueue.push(*hReq);
 
-    updateCompletion();
+    updateCompletion(); 
 
     delete hReq;
   };
@@ -212,6 +221,11 @@ void HIL::write(Request &req) {
                " + %" PRIu64,
                pReq->reqID, pReq->range.slpn, pReq->range.nlp, pReq->offset,
                pReq->length);
+
+    debugprint(LOG_HIL, "HIL | Submitting write request to scheduler");
+    pScheduler->submitRequest(*pReq);
+    pScheduler->tick(tick);
+    debugprint(LOG_HIL, "HIL | Write request submitted to scheduler");
 
     ICL::Request reqInternal(*pReq);
     pICL->write(reqInternal, tick);

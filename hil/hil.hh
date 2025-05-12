@@ -20,10 +20,14 @@
 #ifndef __HIL_HIL__
 #define __HIL_HIL__
 
+#include <cinttypes>
 #include <queue>
+#include <vector>
 
 #include "icl/icl.hh"
+#include "hil/scheduler/fcfs_scheduler.hh"
 #include "sim/dma_interface.hh"
+#include "util/def.hh"
 #include "util/simplessd.hh"
 
 namespace SimpleSSD {
@@ -34,7 +38,8 @@ class HIL : public StatObject {
  private:
   ConfigReader &conf;
   ICL::ICL *pICL;
-
+  FCFSScheduler *pScheduler;
+  
   uint64_t reqCount;
 
   uint64_t lastScheduled;

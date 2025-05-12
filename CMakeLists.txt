@@ -142,6 +142,10 @@ set(SRC_HIL_UFS
   hil/ufs/device.cc
   hil/ufs/host.cc
 )
+set(SRC_HIL_SCHEDULER
+  hil/scheduler/fcfs_scheduler.cc
+  hil/scheduler/scheduler.cc
+)
 set(SRC_HIL
   hil/hil.cc
 )
@@ -210,21 +214,22 @@ SOURCE_GROUP("Source Files\\util" FILES ${SRC_UTIL})
 add_library(simplessd STATIC
   ${SRC_CPU}
   ${SRC_DRAM}
-  ${SRC_FTL}
   ${SRC_FTL_COMMON}
+  ${SRC_FTL}
   ${SRC_ISC}
   ${SRC_ISC_SIM}
   ${SRC_ISC_UTILS}
   ${SRC_ISC_SLET}
   ${SRC_ISC_FSA}
-  ${SRC_HIL}
   ${SRC_HIL_NVME}
   ${SRC_HIL_SATA}
   ${SRC_HIL_UFS}
+  ${SRC_HIL_SCHEDULER}
+  ${SRC_HIL}
   ${SRC_ICL}
   ${SRC_LIB_INIH}
-  ${SRC_PAL}
   ${SRC_PAL_OLD}
+  ${SRC_PAL}
   ${SRC_SIM}
   ${SRC_UTIL}
 )
