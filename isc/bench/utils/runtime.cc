@@ -66,16 +66,31 @@ int send_passthru(nvme_config_t config) {
 
 int initRuntime(nvme_config_t config) {
   config.opcode = ISC_OPCODE_SET;
-  config.data_len = 0;
+  config.data_len = NVME_LBA_SIZE;  // 必須至少有一個 LBA 大小的 buffer
   config.nlb = 0;
-  config.data = nullptr;
   config.metadata_len = 0;
   config.metadata = nullptr;
   config.slba = 0;
 
   setupSubcmd(&config.slba, ISC_SUBCMD_INIT, 0);
-  return send_passthru(config);
+
+  
+  char *buffer = (char *)aligned_alloc(HOST_PAGE_SIZE, config.data_len);
+  if (!buffer) {
+    perr("Buffer allocation failed");
+    return -ENOMEM;
+  }
+  memset(buffer, 0, config.data_len);
+  config.data = buffer;
+
+  auto res = send_passthru(config);
+  pr("request succeed, copy data to user buffer");
+
+  free(buffer);
+
+  return res;
 }
+
 
 /* the NLB field is fixed to 4KiB, @dlen param is used for memcpy only */
 int setOpt(uint32_t id, nvme_config_t config, const char *key, void *data,
@@ -85,6 +100,9 @@ int setOpt(uint32_t id, nvme_config_t config, const char *key, void *data,
   config.data_len = ALIGN_UP(dlen, HOST_PAGE_SIZE);
   config.nlb = (config.data_len / NVME_LBA_SIZE) - 1;
   config.data = (char *)aligned_alloc(HOST_PAGE_SIZE, config.data_len);
+  config.metadata_len = 0;
+  config.metadata = nullptr;
+
   setupSubcmd(&config.slba, ISC_SUBCMD_SLET_OPT, id);
 
   if (!config.data) {
@@ -101,8 +119,6 @@ int setOpt(uint32_t id, nvme_config_t config, const char *key, void *data,
   auto res = send_passthru(config);
   if (config.data)
     free(config.data);
-  if (config.metadata)
-    free(config.metadata);
   return res;
 }
 
@@ -113,6 +129,8 @@ int getResult(uint32_t id, nvme_config_t config, void *data, size_t dlen) {
   config.data_len = ALIGN_UP(dlen, HOST_PAGE_SIZE);
   config.nlb = (config.data_len / NVME_LBA_SIZE) - 1;
   config.data = (char *)aligned_alloc(HOST_PAGE_SIZE, config.data_len);
+  config.metadata_len = 0;
+  config.metadata = nullptr;
 
   setupSubcmd(&config.slba, ISC_SUBCMD_SLET_RES, id);
 
@@ -131,20 +149,23 @@ int getResult(uint32_t id, nvme_config_t config, void *data, size_t dlen) {
 
   if (config.data)
     free(config.data);
-  if (config.metadata)
-    free(config.metadata);
 
   return res;
 }
 
 int getResultSize(uint32_t id, nvme_config_t config, uint64_t *data) {
+  pr("get resultsize start");
   config.opcode = ISC_OPCODE_GET;
   config.slba = 0;
   config.nlb = 7;
   config.data_len = ALIGN_UP(sizeof(uint64_t), HOST_PAGE_SIZE);
   config.nlb = (config.data_len / NVME_LBA_SIZE) - 1;
+  config.metadata_len = 0;
+  config.metadata = nullptr;
+  
+  pr("get resultsize alloc start");
   config.data = (char *)aligned_alloc(HOST_PAGE_SIZE, config.data_len);
-
+  pr("get resultsize alloc end");
   setupSubcmd(&config.slba, ISC_SUBCMD_SLET_RESSZ, id);
 
   if (!config.data) {
@@ -162,28 +183,32 @@ int getResultSize(uint32_t id, nvme_config_t config, uint64_t *data) {
 
   if (config.data)
     free(config.data);
-  if (config.metadata)
-    free(config.metadata);
 
   return res;
 }
 
 int startSlet(uint32_t id, nvme_config_t config) {
   config.opcode = ISC_OPCODE_GET;
-  config.nlb = 1;
-  config.data_len = 0;
-  config.data = nullptr;
+  config.data_len = NVME_LBA_SIZE;
+  config.nlb      = (config.data_len / NVME_LBA_SIZE) - 1;
   config.metadata_len = 0;
   config.metadata = nullptr;
   config.slba = 0;
 
   setupSubcmd(&config.slba, ISC_SUBCMD_SLET_RUN, id);
 
+  char *buffer = (char *)aligned_alloc(HOST_PAGE_SIZE, config.data_len);
+  if (!buffer) {
+    perr("Buffer allocation failed");
+    return -ENOMEM;
+  }
+  memset(buffer, 0, config.data_len);
+  config.data = buffer;
+
   auto res = send_passthru(config);
   if (config.data)
     free(config.data);
-  if (config.metadata)
-    free(config.metadata);
+  pr("this is STATRT RUNTIME");
   return res;
 }
 

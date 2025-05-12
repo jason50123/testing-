@@ -91,7 +91,7 @@ static inline int getExtents(const char *path, size_t *numFiles,
                .fm_mapped_extents = 0,
                .fm_extent_count = 0,
                .fm_reserved = 0,
-               .fm_extents = {}};
+               /*.fm_extents = {}*/};
 
     if (ioctl(fd, FS_IOC_FIEMAP, &fm_meta)) {
       perrno("first time FIEMAP failed");
