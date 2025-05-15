@@ -143,8 +143,10 @@ set(SRC_HIL_UFS
   hil/ufs/host.cc
 )
 set(SRC_HIL_SCHEDULER
+  hil/scheduler/credit_scheduler.cc
   hil/scheduler/fcfs_scheduler.cc
   hil/scheduler/scheduler.cc
+  hil/scheduler/flin_scheduler.cc
 )
 set(SRC_HIL
   hil/hil.cc
