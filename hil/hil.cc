@@ -36,14 +36,20 @@
 #include "isc/slet/stats32.hh"
 #include "isc/slet/stats64.hh"
 
-using SimpleSSD::ISC::byte;
+#include "hil/scheduler/fcfs_scheduler.hh"
+#include "hil/scheduler/credit_scheduler.hh"
 
+using SimpleSSD::ISC::byte;
+SimpleSSD::HIL::Scheduler *gScheduler = nullptr;
 namespace SimpleSSD {
 
 namespace HIL {
 
+#define PR_SECTION LOG_HIL
+
 HIL::HIL(ConfigReader &c) : conf(c), reqCount(0), lastScheduled(0) {
   pICL = new ICL::ICL(conf);
+  currentSchedulerType = SchedulerType::FCFS;  // 預設使用 FCFS
   pScheduler = new FCFSScheduler();
   ISC::SIM::FTL::setCache(pICL);
 
@@ -70,10 +76,10 @@ void HIL::read(Request &req) {
                pReq->reqID, pReq->range.slpn, pReq->range.nlp, pReq->offset,
                pReq->length);
 
-    debugprint(LOG_HIL, "HIL | Submitting read request to scheduler");
+    pr("HIL | Submitting read request to scheduler");
     pScheduler->submitRequest(*pReq);
     pScheduler->tick(tick);
-    debugprint(LOG_HIL, "HIL | Read request submitted to scheduler");
+    pr("HIL | Read request submitted to scheduler");
 
     ICL::Request reqInternal(*pReq);
     pICL->read(reqInternal, tick);
@@ -94,7 +100,34 @@ void HIL::read(Request &req) {
   execute(CPU::HIL, CPU::READ, doRead, new Request(req));
 }
 
-#define PR_SECTION LOG_HIL
+void HIL::switchScheduler(SchedulerType type) {
+  if (type == currentSchedulerType) {
+    return;  // 如果已經是目標排程器，則不需要切換
+  }
+
+  // 刪除舊的排程器
+  delete pScheduler;
+
+  // 創建新的排程器
+  switch (type) {
+    case SchedulerType::FCFS:
+      pScheduler = new FCFSScheduler();
+      pr("Switched to FCFS scheduler");
+      break;
+    case SchedulerType::CREDIT:
+      pScheduler = new CreditScheduler(100, 500);
+      pr("Switched to Credit scheduler");
+      break;
+    case SchedulerType::FLIN:
+      pScheduler = new FLINScheduler(1000000, 1000000, 100000, 500000);
+      pr("Switched to FLIN scheduler");
+      break;
+    default:
+      panic("Unknown scheduler type");
+  }
+
+  currentSchedulerType = type;
+}
 
 void HIL::isc_set(Request &req) {
   DMAFunction doSet = [this](uint64_t beginAt, void *ctx) {
@@ -128,6 +161,23 @@ void HIL::isc_set(Request &req) {
     }
     else if (ISC_SUBCMD_IS(slba, ISC_SUBCMD_FREE)) {
       ISC::Runtime::destory();
+    }
+    else if (ISC_SUBCMD_IS(slba, ISC_SUBCMD_SCHEDULER)) {
+      // 處理排程器切換命令
+      auto schedulerType = ISC_SUBCMD_OPT(slba);
+      switch (schedulerType) {
+        case ISC_SUBCMD_SCHEDULER_FCFS:
+          switchScheduler(SchedulerType::FCFS);
+          break;
+        case ISC_SUBCMD_SCHEDULER_CREDIT:
+          switchScheduler(SchedulerType::CREDIT);
+          break;
+        case ISC_SUBCMD_SCHEDULER_FLIN:
+          switchScheduler(SchedulerType::FLIN);
+          break;
+        default:
+          panic("Unknown scheduler type: 0x%x", schedulerType);
+      }
     }
     else if (ISC_SUBCMD_IS(slba, ISC_SUBCMD_SLET_OPT)) {
       auto id = ISC_SUBCMD_OPT(slba);
@@ -222,10 +272,10 @@ void HIL::write(Request &req) {
                pReq->reqID, pReq->range.slpn, pReq->range.nlp, pReq->offset,
                pReq->length);
 
-    debugprint(LOG_HIL, "HIL | Submitting write request to scheduler");
+    pr("HIL | Submitting write request to scheduler");
     pScheduler->submitRequest(*pReq);
     pScheduler->tick(tick);
-    debugprint(LOG_HIL, "HIL | Write request submitted to scheduler");
+    pr("HIL | Write request submitted to scheduler");
 
     ICL::Request reqInternal(*pReq);
     pICL->write(reqInternal, tick);

@@ -25,20 +25,32 @@
 #include <vector>
 
 #include "icl/icl.hh"
-#include "hil/scheduler/fcfs_scheduler.hh"
 #include "sim/dma_interface.hh"
 #include "util/def.hh"
 #include "util/simplessd.hh"
+
+#include "hil/scheduler/scheduler.hh"
+#include "hil/scheduler/fcfs_scheduler.hh"
+#include "hil/scheduler/credit_scheduler.hh"
+#include "hil/scheduler/flin_scheduler.hh"
 
 namespace SimpleSSD {
 
 namespace HIL {
 
+// 排程器類型定義
+enum class SchedulerType {
+  FCFS,
+  CREDIT,
+  FLIN
+};
+
 class HIL : public StatObject {
  private:
   ConfigReader &conf;
   ICL::ICL *pICL;
-  FCFSScheduler *pScheduler;
+  Scheduler *pScheduler;  // 改用基礎類別指標
+  SchedulerType currentSchedulerType;
   
   uint64_t reqCount;
 
@@ -56,6 +68,7 @@ class HIL : public StatObject {
   void updateBusyTime(int, uint64_t, uint64_t);
   void updateCompletion();
   void completion();
+  void switchScheduler(SchedulerType type);  // 新增切換排程器的方法
 
  public:
   HIL(ConfigReader &);
