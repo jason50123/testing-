@@ -212,5 +212,30 @@ int startSlet(uint32_t id, nvme_config_t config) {
   return res;
 }
 
+int setScheduler(nvme_config_t cfg, uint32_t type)
+{
+    cfg.opcode       = ISC_OPCODE_SET;
+    cfg.data_len     = NVME_LBA_SIZE;        // 至少要有一個 LBA
+    cfg.nlb          = 0;
+    cfg.metadata_len = 0;
+    cfg.metadata     = nullptr;
+    cfg.slba         = 0;
+
+    setupSubcmd(&cfg.slba, ISC_SUBCMD_SCHEDULER, type);
+
+    char *buffer = (char *)aligned_alloc(HOST_PAGE_SIZE, cfg.data_len);
+    if (!buffer) {
+      perr("Buffer allocation failed");
+      return -ENOMEM;
+    }
+    memset(buffer, 0, cfg.data_len);
+    cfg.data = buffer;
+
+    int ret = send_passthru(cfg);
+    pr("scheduler choose end");
+    free(buffer);
+    return ret;
+}
+
 }  // namespace ISC
 }  // namespace SimpleSSD

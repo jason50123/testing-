@@ -106,6 +106,7 @@ extern int setOpt(uint32_t id, nvme_config_t, const char *, void *, size_t);
 extern int getResult(uint32_t id, nvme_config_t, void *, size_t);
 extern int getResultSize(uint32_t id, nvme_config_t, size_t *);
 extern int startSlet(uint32_t id, nvme_config_t);
+extern int setScheduler(nvme_config_t, uint32_t);
 
 }  // namespace ISC
 }  // namespace SimpleSSD
