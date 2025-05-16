@@ -32,6 +32,12 @@
 
 #define PR_SECTION LOG_HIL_NVME
 
+#include <endian.h>
+
+#ifndef le64_to_cpu
+#define le64_to_cpu(x) le64toh(x)
+#endif
+
 using namespace SimpleSSD::ISC;
 
 namespace SimpleSSD {
@@ -313,6 +319,9 @@ void Namespace::write(SQEntryWrapper &req, RequestFunction &func) {
   CQEntryWrapper resp(req);
   uint64_t slba = ((uint64_t)req.entry.dword11 << 32) | req.entry.dword10;
   uint16_t nlb = (req.entry.dword12 & 0xFFFF) + 1;
+  uint64_t combined = le64_to_cpu(req.entry.reserved2);
+  uint32_t uid  = combined >> 32;
+  uint32_t prio = combined & 0xFFFFFFFF;
 
   if (!attached) {
     err = true;
@@ -382,7 +391,9 @@ void Namespace::write(SQEntryWrapper &req, RequestFunction &func) {
     pContext->beginAt = getTick();
     pContext->slba = slba;
     pContext->nlb = nlb;
-
+    pContext->uid = uid;
+    pContext->prio = prio;
+    
     CPUContext *pCPU =
         new CPUContext(doRead, pContext, CPU::NVME__NAMESPACE, CPU::WRITE);
 
@@ -407,6 +418,10 @@ void Namespace::read(SQEntryWrapper &req, RequestFunction &func) {
   CQEntryWrapper resp(req);
   uint64_t slba = ((uint64_t)req.entry.dword11 << 32) | req.entry.dword10;
   uint16_t nlb = (req.entry.dword12 & 0xFFFF) + 1;
+  uint64_t combined = le64_to_cpu(req.entry.reserved2);
+  uint32_t uid  = combined >> 32;
+  uint32_t prio = combined & 0xFFFFFFFF;
+  
   // bool fua = req.entry.dword12 & 0x40000000;
 
   if (!attached) {
@@ -418,7 +433,26 @@ void Namespace::read(SQEntryWrapper &req, RequestFunction &func) {
     err = true;
     warn("nvme_namespace: host tried to read 0 blocks");
   }
-
+  debugprint(LOG_HIL_NVME,
+    "NVM test    | write  | SQ %u:%u | OPCODE %u | FUSE %u | CID %u | NSID %u | Reserved1 %u | Reserved2 %u | Metadata 0x%016" PRIX64 " | Data1 0x%016" PRIX64 " | Data2 0x%016" PRIX64 " | D10 %u | D11 %u | D12 %u | D13 %u | D14 %u | D15 %u",
+    req.sqID,
+    req.sqUID,
+    req.entry.dword0.opcode,
+    req.entry.dword0.fuse,
+    req.entry.dword0.commandID,
+    req.entry.namespaceID,
+    req.entry.reserved1,
+    req.entry.reserved2,
+    req.entry.metadata,
+    req.entry.data1,
+    req.entry.data2,
+    req.entry.dword10,
+    req.entry.dword11,
+    req.entry.dword12,
+    req.entry.dword13,
+    req.entry.dword14,
+    req.entry.dword15);
+    
   debugprint(LOG_HIL_NVME,
              "NVM     | READ  | SQ %u:%u | CID %u | NSID %-5d | %" PRIX64
              " + %d",
@@ -456,6 +490,7 @@ void Namespace::read(SQEntryWrapper &req, RequestFunction &func) {
 
       pContext->tick = tick;
       pContext->beginAt = 0;
+     
 
       pParent->read(this, pContext->slba, pContext->nlb, dmaDone, pContext);
 
@@ -474,7 +509,9 @@ void Namespace::read(SQEntryWrapper &req, RequestFunction &func) {
     pContext->beginAt = getTick();
     pContext->slba = slba;
     pContext->nlb = nlb;
-
+    pContext->uid = uid;
+    pContext->prio = prio;
+    
     CPUContext *pCPU =
         new CPUContext(doRead, pContext, CPU::NVME__NAMESPACE, CPU::READ);
 
@@ -499,6 +536,10 @@ void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
   CQEntryWrapper resp(req);
   uint64_t slba = ((uint64_t)req.entry.dword11 << 32) | req.entry.dword10;
   uint16_t nlb = (req.entry.dword12 & 0xFFFF) + 1;
+  uint64_t combined = le64_to_cpu(req.entry.reserved2);
+  uint32_t uid  = combined >> 32;
+  uint32_t prio = combined & 0xFFFFFFFF;
+  
   // bool fua = req.entry.dword12 & 0x40000000;
 
   if (!attached) {
@@ -587,6 +628,8 @@ void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
     pContext->beginAt = getTick();
     pContext->slba = slba;
     pContext->nlb = nlb;
+    pContext->uid = uid;
+    pContext->prio = prio;
 
     CPUContext *pCPU =
         new CPUContext(doISC, pContext, CPU::NVME__NAMESPACE, CPU::ISC__GET);
@@ -612,6 +655,10 @@ void Namespace::isc_set(SQEntryWrapper &req, RequestFunction &func) {
   CQEntryWrapper resp(req);
   uint64_t slba = ((uint64_t)req.entry.dword11 << 32) | req.entry.dword10;
   uint16_t nlb = (req.entry.dword12 & 0xFFFF) + 1;
+  uint64_t combined = le64_to_cpu(req.entry.reserved2);
+  uint32_t uid  = combined >> 32;
+  uint32_t prio = combined & 0xFFFFFFFF;
+  
 
   if (!attached) {
     err = true;
@@ -680,6 +727,8 @@ void Namespace::isc_set(SQEntryWrapper &req, RequestFunction &func) {
     pContext->beginAt = getTick();
     pContext->slba = slba;
     pContext->nlb = nlb;
+    pContext->uid = uid;
+    pContext->prio = prio;
 
     CPUContext *pCPU =
         new CPUContext(doRead, pContext, CPU::NVME__NAMESPACE, CPU::ISC__SET);

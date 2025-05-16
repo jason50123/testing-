@@ -45,6 +45,9 @@ typedef struct _Request {
   uint64_t offset;
   uint64_t length;
   LPNRange range;
+  
+  uint32_t userID;   ///< host uid (encoded by driver)
+  uint32_t prio;
 
   const void *ns;
 
@@ -68,6 +71,9 @@ typedef struct _Request {
   uint64_t offset;    // logical block offset in this page
   uint64_t length;    // nlb * bsz
   LPNRange range;
+
+  uint32_t userID;   
+  uint32_t prio;
 
   _Request();
   _Request(HIL::Request &);

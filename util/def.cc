@@ -35,6 +35,8 @@ Request::_Request()
       reqSubID(0),
       offset(0),
       length(0),
+      userID(0),
+      prio(0),
       finishedAt(0),
       context(nullptr) {}
 
@@ -43,6 +45,8 @@ Request::_Request(DMAFunction &f, void *c)
       reqSubID(0),
       offset(0),
       length(0),
+      userID(0), 
+      prio(0),
       finishedAt(0),
       function(f),
       context(c) {}
@@ -62,7 +66,9 @@ Request::_Request(HIL::Request &r)
       reqSubID(r.reqSubID),
       offset(r.offset),
       length(r.length),
-      range(r.range) {}
+      range(r.range),
+      userID(r.userID),
+      prio(r.prio) {}
 
 }  // namespace ICL
 
