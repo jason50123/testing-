@@ -2,6 +2,7 @@
 
 #include "common.hh"
 #include "runtime.hh"
+#include "uid_debug.hh"
 
 #include "../../sims/configs.hh"
 
@@ -196,6 +197,9 @@ int startSlet(uint32_t id, nvme_config_t config) {
   config.slba = 0;
 
   setupSubcmd(&config.slba, ISC_SUBCMD_SLET_RUN, id);
+  
+  config.cdw03 = getuid();
+  dump_uids("startSlet");
 
   char *buffer = (char *)aligned_alloc(HOST_PAGE_SIZE, config.data_len);
   if (!buffer) {
