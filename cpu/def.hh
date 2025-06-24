@@ -54,6 +54,10 @@ typedef enum : uint16_t {
   ISC__SLET__STATS32,
   ISC__SLET__STATS64,
 
+  //Scheduler namespace
+  CREDIT_SCHEDULER,
+  FCFS_SCHEDULER,
+
   TOTAL_NAMESPACES
 } NAMESPACE;
 
@@ -154,6 +158,7 @@ typedef enum : uint16_t {
   ISC__ADD_SLET__GREP,
   ISC__ADD_SLET__STATS32,
   ISC__ADD_SLET__STATS64,
+  SCHEDULE,
 
   TOTAL_FUNCTIONS,
 } FUNCTION;

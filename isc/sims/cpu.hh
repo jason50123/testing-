@@ -48,6 +48,10 @@ typedef enum : uint16_t {
   ISC__SLET__STATS32,
   ISC__SLET__STATS64,
 
+  //Scheduler
+  CREDIT_SCHEDULER,
+  FCFS_SCHEDULER,
+
   // add before this
   NS_COUNT,
 } NS;
@@ -85,6 +89,9 @@ typedef enum : uint16_t {
   ISC__ADD_SLET__MD5,
   ISC__ADD_SLET__STATS32,
   ISC__ADD_SLET__STATS64,
+  
+  //Scheduler
+  SCHEDULE,
 
   // add before this
   FCT_COUNT,

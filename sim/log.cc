@@ -120,6 +120,8 @@ const std::string logName[LOG_NUM] = {
     "ISC::SLET::STATS64",       //!< LOG_ISC_SLET_STATS64
     "ISC::FSA",                 //!< LOG_ISC_FSA
     "ISC::FSA::EXT4",           //!< LOG_ISC_EXT4
+    "HIL::CREDIT_SCHEDULER",    //!< LOG_HIL_CREDIT_SCHEDULER
+    "HIL::FCFS_SCHEDULER",      //!< LOG_HIL_FCFS_SCHEDULER
 };
 
 void debugprint(LOG_ID id, const char *format, ...) {
