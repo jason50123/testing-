@@ -24,6 +24,7 @@
 #include <vector>
 #include "util/def.hh"
 #include "util/simplessd.hh"
+#include "icl/icl.hh"
 
 namespace SimpleSSD {
 
@@ -47,6 +48,9 @@ class Scheduler {
   virtual void getStatList(std::vector<Stats> &, std::string) = 0;
   virtual void getStatValues(std::vector<double> &) = 0;
   virtual void resetStatValues() = 0;
+  virtual bool pendingForUser(uint32_t /*uid*/) const { return false; }
+  virtual bool checkCredit(uint32_t /*uid*/, size_t /*needed*/) const { return true; }
+  virtual void useCredit(uint32_t /*uid*/, size_t /*used*/) {}
 };
 
 }  // namespace HIL

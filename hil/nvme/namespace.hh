@@ -117,6 +117,9 @@ class Namespace {
 
   uint64_t formatFinishedAt;
 
+  std::queue<IOContext*> pendingISC;
+  Event evKickISC = 0;
+
   // Admin commands
   void getLogPage(SQEntryWrapper &, RequestFunction &);
 
@@ -128,6 +131,9 @@ class Namespace {
   void isc_get(SQEntryWrapper &, RequestFunction &);
   void compare(SQEntryWrapper &, RequestFunction &);
   void datasetManagement(SQEntryWrapper &, RequestFunction &);
+
+  // For ISC_GET function
+  void kickPendingISC();
 
  public:
   Namespace(Subsystem *, ConfigData &);

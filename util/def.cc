@@ -37,6 +37,7 @@ Request::_Request()
       length(0),
       userID(0),
       prio(0),
+      op(OpType::READ),
       finishedAt(0),
       context(nullptr) {}
 
@@ -47,6 +48,7 @@ Request::_Request(DMAFunction &f, void *c)
       length(0),
       userID(0), 
       prio(0),
+      op(OpType::READ),
       finishedAt(0),
       function(f),
       context(c) {}

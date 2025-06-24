@@ -50,7 +50,7 @@ namespace HIL {
 HIL::HIL(ConfigReader &c) : conf(c), reqCount(0), lastScheduled(0) {
   pICL = new ICL::ICL(conf);
   currentSchedulerType = SchedulerType::FCFS;  // 預設使用 FCFS
-  pScheduler = new FCFSScheduler();
+  pScheduler = new FCFSScheduler(pICL);
   ISC::SIM::FTL::setCache(pICL);
 
   memset(&stat, 0, sizeof(stat));
@@ -69,6 +69,7 @@ void HIL::read(Request &req) {
     uint64_t tick = beginAt;
 
     pReq->reqID = ++reqCount;
+    pReq->op    = OpType::READ; 
 
     debugprint(LOG_HIL,
                "READ  | REQ %7u | LCA %" PRIu64 " + %" PRIu64 " | BYTE %" PRIu64
@@ -81,8 +82,6 @@ void HIL::read(Request &req) {
     pScheduler->tick(tick);
     pr("HIL | Read request submitted to scheduler");
 
-    ICL::Request reqInternal(*pReq);
-    pICL->read(reqInternal, tick);
 
     stat.request[0]++;
     stat.iosize[0] += pReq->length;
@@ -100,28 +99,30 @@ void HIL::read(Request &req) {
   execute(CPU::HIL, CPU::READ, doRead, new Request(req));
 }
 
+
 void HIL::switchScheduler(SchedulerType type) {
   if (type == currentSchedulerType) {
-    return;  // 如果已經是目標排程器，則不需要切換
+    return;
   }
+  //FIXME: we have to handle if old scheduler still have request
 
-  // 刪除舊的排程器
   delete pScheduler;
 
-  // 創建新的排程器
+  // FIXME: when we build this project we have an attr to decide which scheduler to use
   switch (type) {
     case SchedulerType::FCFS:
-      pScheduler = new FCFSScheduler();
+      pScheduler = new FCFSScheduler(pICL);
       pr("Switched to FCFS scheduler");
       break;
     case SchedulerType::CREDIT:
-      pScheduler = new CreditScheduler(100, 500);
+      pScheduler = new CreditScheduler(pICL, 2, 1000, 30);
+      gScheduler = pScheduler; 
       pr("Switched to Credit scheduler");
       break;
-    case SchedulerType::FLIN:
-      pScheduler = new FLINScheduler(1000000, 1000000, 100000, 500000);
-      pr("Switched to FLIN scheduler");
-      break;
+    // case SchedulerType::FLIN:
+    //   pScheduler = new FLINScheduler(1000000, 1000000, 100000, 500000);
+    //   pr("Switched to FLIN scheduler");
+    //   break;
     default:
       panic("Unknown scheduler type");
   }
@@ -163,7 +164,7 @@ void HIL::isc_set(Request &req) {
       ISC::Runtime::destory();
     }
     else if (ISC_SUBCMD_IS(slba, ISC_SUBCMD_SCHEDULER)) {
-      // 處理排程器切換命令
+      // handle swith scheduler typesssssssss
       auto schedulerType = ISC_SUBCMD_OPT(slba);
       switch (schedulerType) {
         case ISC_SUBCMD_SCHEDULER_FCFS:
@@ -265,6 +266,7 @@ void HIL::write(Request &req) {
     uint64_t tick = beginAt;
 
     pReq->reqID = ++reqCount;
+    pReq->op = OpType::WRITE;
 
     debugprint(LOG_HIL,
                "WRITE | REQ %7u | LCA %" PRIu64 " + %" PRIu64 " | BYTE %" PRIu64
@@ -277,8 +279,6 @@ void HIL::write(Request &req) {
     pScheduler->tick(tick);
     pr("HIL | Write request submitted to scheduler");
 
-    ICL::Request reqInternal(*pReq);
-    pICL->write(reqInternal, tick);
 
     stat.request[1]++;
     stat.iosize[1] += pReq->length;

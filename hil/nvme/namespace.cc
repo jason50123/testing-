@@ -38,6 +38,8 @@
 #define le64_to_cpu(x) le64toh(x)
 #endif
 
+#define PAGE_SIZE 4096ULL
+
 using namespace SimpleSSD::ISC;
 
 namespace SimpleSSD {
@@ -319,9 +321,9 @@ void Namespace::write(SQEntryWrapper &req, RequestFunction &func) {
   CQEntryWrapper resp(req);
   uint64_t slba = ((uint64_t)req.entry.dword11 << 32) | req.entry.dword10;
   uint16_t nlb = (req.entry.dword12 & 0xFFFF) + 1;
-  uint64_t combined = le64_to_cpu(req.entry.reserved2);
-  uint32_t uid  = combined >> 32;
-  uint32_t prio = combined & 0xFFFFFFFF;
+  uint32_t prio = req.entry.reserved1;
+  uint32_t uid  = req.entry.reserved2;
+  
 
   if (!attached) {
     err = true;
@@ -383,7 +385,7 @@ void Namespace::write(SQEntryWrapper &req, RequestFunction &func) {
                             context);
       }
 
-      pParent->write(this, pContext->slba, pContext->nlb, dmaDone, context);
+      pParent->write(this, pContext->slba, pContext->nlb, pContext->uid, dmaDone, context);
     };
 
     IOContext *pContext = new IOContext(func, resp);
@@ -418,9 +420,9 @@ void Namespace::read(SQEntryWrapper &req, RequestFunction &func) {
   CQEntryWrapper resp(req);
   uint64_t slba = ((uint64_t)req.entry.dword11 << 32) | req.entry.dword10;
   uint16_t nlb = (req.entry.dword12 & 0xFFFF) + 1;
-  uint64_t combined = le64_to_cpu(req.entry.reserved2);
-  uint32_t uid  = combined >> 32;
-  uint32_t prio = combined & 0xFFFFFFFF;
+  uint32_t prio = req.entry.reserved1;
+  uint32_t uid  = req.entry.reserved2;
+  
   
   // bool fua = req.entry.dword12 & 0x40000000;
 
@@ -434,7 +436,7 @@ void Namespace::read(SQEntryWrapper &req, RequestFunction &func) {
     warn("nvme_namespace: host tried to read 0 blocks");
   }
   debugprint(LOG_HIL_NVME,
-    "NVM test    | write  | SQ %u:%u | OPCODE %u | FUSE %u | CID %u | NSID %u | Reserved1 %u | Reserved2 %u | Metadata 0x%016" PRIX64 " | Data1 0x%016" PRIX64 " | Data2 0x%016" PRIX64 " | D10 %u | D11 %u | D12 %u | D13 %u | D14 %u | D15 %u",
+    "NVM test    | read  | SQ %u:%u | OPCODE %u | FUSE %u | CID %u | NSID %u | Reserved1 %u | Reserved2 %u | Metadata 0x%016" PRIX64 " | Data1 0x%016" PRIX64 " | Data2 0x%016" PRIX64 " | D10 %u | D11 %u | D12 %u | D13 %u | D14 %u | D15 %u",
     req.sqID,
     req.sqUID,
     req.entry.dword0.opcode,
@@ -455,8 +457,8 @@ void Namespace::read(SQEntryWrapper &req, RequestFunction &func) {
     
   debugprint(LOG_HIL_NVME,
              "NVM     | READ  | SQ %u:%u | CID %u | NSID %-5d | %" PRIX64
-             " + %d",
-             req.sqID, req.sqUID, req.entry.dword0.commandID, nsid, slba, nlb);
+             " + %d uid : %d| ",
+             req.sqID, req.sqUID, req.entry.dword0.commandID, nsid, slba, nlb, uid);
 
   if (!err) {
     DMAFunction doRead = [this](uint64_t tick, void *context) {
@@ -492,7 +494,7 @@ void Namespace::read(SQEntryWrapper &req, RequestFunction &func) {
       pContext->beginAt = 0;
      
 
-      pParent->read(this, pContext->slba, pContext->nlb, dmaDone, pContext);
+      pParent->read(this, pContext->slba, pContext->nlb, pContext->uid, dmaDone, pContext);
 
       pContext->buffer = (uint8_t *)calloc(pContext->nlb, info.lbaSize);
 
@@ -530,16 +532,72 @@ void Namespace::read(SQEntryWrapper &req, RequestFunction &func) {
   }
 }
 
+void Namespace::kickPendingISC()
+{
+    size_t qsz = pendingISC.size();
+    while (qsz--) {
+        IOContext *ctx = pendingISC.front();
+        pendingISC.pop();
+
+        uint64_t tick = getTick();          //get current tick
+        size_t szRes  = *(size_t*)ISC::Runtime::getOpt(
+                            ISC_SUBCMD_OPT(ctx->slba),
+                            ISC_KEY_RESULT_SIZE, tick, nullptr);
+        uint64_t pages = (szRes + PAGE_SIZE - 1) / PAGE_SIZE;
+
+        /* check credit again */
+        if (gScheduler && !gScheduler->checkCredit(ctx->uid, pages*PAGE_SIZE)) {
+            /* still not enough */
+            if (!evKickISC)
+              evKickISC = allocate([this](uint64_t){ kickPendingISC(); });
+            schedule(evKickISC, tick + 50);
+            pendingISC.push(ctx);
+            continue;
+        }
+
+        /* enough token -> goto isc flow and replay*/
+        if (gScheduler) {
+            Request credReq{};
+            credReq.userID = ctx->uid;
+            credReq.length = pages*PAGE_SIZE;
+            credReq.op     = OpType::ISC_RESULT;
+            gScheduler->submitRequest(credReq);
+            gScheduler->tick(tick);
+        }
+
+        /* write dma again ((default flow)) */
+        auto id   = ISC_SUBCMD_OPT(ctx->slba);
+        auto res  = ISC::Runtime::getOpt(id, ISC_KEY_RESULT, tick, nullptr);
+        size_t cp = MIN(ctx->nlb*info.lbaSize, szRes);
+        memcpy(ctx->buffer, res, cp);
+
+        auto done = [this](uint64_t t, void *c){
+            (void)t ;
+            IOContext *p = (IOContext*)c;
+            p->beginAt++;
+            if (p->beginAt == 2) {
+                p->function(p->resp);
+                if (p->buffer) free(p->buffer);
+                delete p->dma;
+                delete p;
+            }
+        };
+        DMAFunction cb = done;
+        ctx->dma->write(0, ctx->nlb*info.lbaSize, ctx->buffer,
+                        cb, ctx);
+    }
+}
+
 void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
   bool noDMA = false;
 
   CQEntryWrapper resp(req);
   uint64_t slba = ((uint64_t)req.entry.dword11 << 32) | req.entry.dword10;
   uint16_t nlb = (req.entry.dword12 & 0xFFFF) + 1;
-  uint64_t combined = le64_to_cpu(req.entry.reserved2);
-  uint32_t uid  = combined >> 32;
-  uint32_t prio = combined & 0xFFFFFFFF;
+  uint32_t prio = req.entry.reserved1;
+  uint32_t uid  = req.entry.reserved2;
   
+
   // bool fua = req.entry.dword12 & 0x40000000;
 
   if (!attached) {
@@ -554,10 +612,11 @@ void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
 
   debugprint(LOG_HIL_NVME,
              "NVM     | ISC-GET  | SQ %u:%u | CID %u | NSID %-5d | %" PRIX64
-             " + %d",
-             req.sqID, req.sqUID, req.entry.dword0.commandID, nsid, slba, nlb);
+             " + %d | uid : %d",
+             req.sqID, req.sqUID, req.entry.dword0.commandID, nsid, slba, nlb, uid);
 
   if (!noDMA) {
+
     DMAFunction doISC = [this](uint64_t tick, void *context) {
       DMAFunction dmaDone = [this](uint64_t tick, void *context) {
         IOContext *pContext = (IOContext *)context;
@@ -590,7 +649,7 @@ void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
       pContext->tick = tick;
       pContext->beginAt = 0;
 
-      pParent->isc_get(this, pContext->slba, pContext->nlb, dmaDone, pContext);
+      pParent->isc_get(this, pContext->slba, pContext->nlb, pContext->uid, dmaDone, pContext);
 
       pContext->buffer = (uint8_t *)calloc(pContext->nlb, info.lbaSize);
 
@@ -601,6 +660,33 @@ void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
         auto res = ISC::Runtime::getOpt(id, ISC_KEY_RESULT, tick, nullptr);
         auto psz = ISC::Runtime::getOpt(id, ISC_KEY_RESULT_SIZE, tick, nullptr);
         auto rsz = MIN(pContext->nlb * info.lbaSize, *(size_t *)psz);
+
+        //Calculate page size and send to scheduler 
+        uint64_t pages = (rsz + PAGE_SIZE - 1) / PAGE_SIZE;
+
+        bool granted = true;
+        if (gScheduler) {
+          if (!gScheduler->checkCredit(pContext->uid, pages*PAGE_SIZE)) {
+            granted = false;
+            pendingISC.push(pContext);
+            if (!evKickISC)
+              evKickISC = allocate([this](uint64_t){ kickPendingISC(); });
+            schedule(evKickISC, tick + 50);
+            return;
+            debugprint(LOG_HIL_NVME,
+              "WAIT_TOKEN | uid=%u need=%lu pages (queue)", pContext->uid, pages);
+          } else {
+            Request credReq{};
+            credReq.userID = pContext->uid;
+            credReq.length = pages*PAGE_SIZE;
+            credReq.op     = OpType::ISC_RESULT;
+            gScheduler->submitRequest(credReq);
+            gScheduler->tick(tick);
+            debugprint(LOG_HIL_NVME,
+              "TOKEN_OK   | uid=%u consume=%lu pages", pContext->uid, pages);
+          }
+        }
+        if (!granted) return;
 
         memcpy(pContext->buffer, res, rsz);
         pr("result/buffer size: %lu/%lu", *(size_t *)psz,
@@ -630,6 +716,8 @@ void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
     pContext->nlb = nlb;
     pContext->uid = uid;
     pContext->prio = prio;
+    pContext->tick    = pContext->beginAt;   /* remember the first time try tick */
+    pContext->buffer  = nullptr;
 
     CPUContext *pCPU =
         new CPUContext(doISC, pContext, CPU::NVME__NAMESPACE, CPU::ISC__GET);
@@ -655,9 +743,9 @@ void Namespace::isc_set(SQEntryWrapper &req, RequestFunction &func) {
   CQEntryWrapper resp(req);
   uint64_t slba = ((uint64_t)req.entry.dword11 << 32) | req.entry.dword10;
   uint16_t nlb = (req.entry.dword12 & 0xFFFF) + 1;
-  uint64_t combined = le64_to_cpu(req.entry.reserved2);
-  uint32_t uid  = combined >> 32;
-  uint32_t prio = combined & 0xFFFFFFFF;
+  uint32_t prio = req.entry.reserved1;
+  uint32_t uid  = req.entry.reserved2;
+  
   
 
   if (!attached) {
@@ -754,6 +842,8 @@ void Namespace::compare(SQEntryWrapper &req, RequestFunction &func) {
   CQEntryWrapper resp(req);
   uint64_t slba = ((uint64_t)req.entry.dword11 << 32) | req.entry.dword10;
   uint16_t nlb = (req.entry.dword12 & 0xFFFF) + 1;
+  uint32_t prio = req.entry.reserved1;
+  uint32_t uid  = req.entry.reserved2;
   // bool fua = req.entry.dword12 & 0x40000000;
 
   if (!attached) {
@@ -816,7 +906,7 @@ void Namespace::compare(SQEntryWrapper &req, RequestFunction &func) {
       pContext->tick = tick;
       pContext->beginAt = 0;
 
-      pParent->read(this, pContext->slba, pContext->nlb, dmaDone, pContext);
+      pParent->read(this, pContext->slba, pContext->nlb, pContext->uid, dmaDone, pContext);
 
       pContext->buffer = (uint8_t *)calloc(pContext->nlb, info.lbaSize);
       pContext->hostContent = (uint8_t *)calloc(pContext->nlb, info.lbaSize);
@@ -834,6 +924,8 @@ void Namespace::compare(SQEntryWrapper &req, RequestFunction &func) {
     pContext->beginAt = getTick();
     pContext->slba = slba;
     pContext->nlb = nlb;
+    pContext->prio = prio;
+    pContext->uid = uid;
 
     CPUContext *pCPU =
         new CPUContext(doRead, pContext, CPU::NVME__NAMESPACE, CPU::READ);

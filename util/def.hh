@@ -39,6 +39,18 @@ typedef struct _LPNRange {
 
 namespace HIL {
 
+enum class OpType : uint8_t {      
+  READ,
+  WRITE,
+  FLUSH,
+  COMPARE,
+  DATASET_MGMT,
+  ISC_SET,
+  ISC_GET,
+  CREDIT_ONLY,
+  ISC_RESULT,
+};
+
 typedef struct _Request {
   uint64_t reqID;
   uint64_t reqSubID;
@@ -49,6 +61,8 @@ typedef struct _Request {
   uint32_t userID;   ///< host uid (encoded by driver)
   uint32_t prio;
 
+  OpType   op;  
+  
   const void *ns;
 
   uint64_t finishedAt;

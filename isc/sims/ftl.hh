@@ -35,13 +35,14 @@ class FTL {
     free(pathFilesystemImg);
     pathFilesystemImg = nullptr;
   }
-
+void  setCurrentUid(uint32_t uid);
 #ifndef ISC_TEST
   static void read(void *, size_t, size_t);
 #endif
   static void read(void *, size_t, size_t _ADD_SIM_PARAMS);
 };
-
+  void setCurrentUid(uint32_t uid);
+  
 }  // namespace SIM
 }  // namespace ISC
 }  // namespace SimpleSSD

@@ -516,7 +516,7 @@ uint32_t Subsystem::validNamespaceCount() {
   return (uint32_t)lNamespaces.size();
 }
 
-void Subsystem::read(Namespace *ns, uint64_t slba, uint64_t nlblk,
+void Subsystem::read(Namespace *ns, uint64_t slba, uint64_t nlblk, uint32_t uid,
                      DMAFunction &func, void *context) {
   Request *req = new Request(func, context);
   DMAFunction doRead = [this, ns](uint64_t, void *context) {
@@ -530,11 +530,11 @@ void Subsystem::read(Namespace *ns, uint64_t slba, uint64_t nlblk,
   };
 
   convertUnit(ns, slba, nlblk, *req);
-
+  req->userID = uid;
   execute(CPU::NVME__SUBSYSTEM, CPU::CONVERT_UNIT, doRead, req);
 }
 
-void Subsystem::isc_get(Namespace *ns, uint64_t slba, uint64_t nlblk,
+void Subsystem::isc_get(Namespace *ns, uint64_t slba, uint64_t nlblk, uint32_t uid,
                         DMAFunction &dmaDone, void *ioCtx) {
   Request *hReq = new Request(dmaDone, ioCtx);
   DMAFunction doISC = [this, ns](uint64_t, void *hReq) {
@@ -548,7 +548,7 @@ void Subsystem::isc_get(Namespace *ns, uint64_t slba, uint64_t nlblk,
   };
 
   convertUnit(ns, slba, nlblk, *hReq);
-
+  hReq->userID = uid;
   execute(CPU::NVME__SUBSYSTEM, CPU::CONVERT_UNIT, doISC, hReq);
 }
 
@@ -568,7 +568,7 @@ void Subsystem::isc_set(Namespace *ns, uint64_t slba, uint64_t nlblk,
   execute(CPU::NVME__SUBSYSTEM, CPU::CONVERT_UNIT, doISC, hReq);
 }
 
-void Subsystem::write(Namespace *ns, uint64_t slba, uint64_t nlblk,
+void Subsystem::write(Namespace *ns, uint64_t slba, uint64_t nlblk, uint32_t uid,
                       DMAFunction &func, void *context) {
   Request *req = new Request(func, context);
   DMAFunction doWrite = [this, ns](uint64_t, void *context) {
@@ -581,7 +581,8 @@ void Subsystem::write(Namespace *ns, uint64_t slba, uint64_t nlblk,
   };
 
   convertUnit(ns, slba, nlblk, *req);
-
+  req->userID = uid;
+  
   execute(CPU::NVME__SUBSYSTEM, CPU::CONVERT_UNIT, doWrite, req);
 }
 

@@ -78,11 +78,11 @@ class Subsystem : public AbstractSubsystem {
   void getNVMCapacity(uint64_t &, uint64_t &) override;
   uint32_t validNamespaceCount() override;
 
-  void read(Namespace *, uint64_t, uint64_t, DMAFunction &, void *);
-  void write(Namespace *, uint64_t, uint64_t, DMAFunction &, void *);
+  void read(Namespace *, uint64_t, uint64_t, uint32_t, DMAFunction &, void *);
+  void write(Namespace *, uint64_t, uint64_t, uint32_t, DMAFunction &, void *);
   void flush(Namespace *, DMAFunction &, void *);
   void trim(Namespace *, uint64_t, uint64_t, DMAFunction &, void *);
-  void isc_get(Namespace *, uint64_t, uint64_t, DMAFunction &, void *);
+  void isc_get(Namespace *, uint64_t, uint64_t, uint32_t, DMAFunction &, void *);
   void isc_set(Namespace *, uint64_t, uint64_t, DMAFunction &, void *);
 
   void getStatList(std::vector<Stats> &, std::string) override;
