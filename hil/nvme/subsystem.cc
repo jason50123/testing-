@@ -187,7 +187,7 @@ void Subsystem::convertUnit(Namespace *ns, uint64_t slba, uint64_t nlblk,
   uint32_t lbaratio = logicalPageSize / info->lbaSize;
   uint64_t slpn;
   uint64_t nlp;
-  uint64_t off;
+  uint64_t off; 
 
   if (lbaratio == 0) {
     lbaratio = info->lbaSize / logicalPageSize;

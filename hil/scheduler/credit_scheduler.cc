@@ -1,237 +1,396 @@
+// ============================================================================
+// credit_scheduler.cc —— Simple token-bucket + RR + admin-queue
+// 修正點：
+//  A) 固定相位補發：用 lastGlobalRefillTick_ 作為「下一次」補發相位（不改名，改語意）；
+//     while(now >= lastGlobalRefillTick_) 逐期補齊，避免“誰先喚醒就拿大鍋”。
+//  B) submit 可觸發派發，但補發嚴格依相位進行（不再把相位綁到 submit 時刻）。
+//  C) 真正 RR 交錯：每成功派發 1 筆，就從 lastChosenUid 的下一位重啟一輪掃描。
+// ============================================================================
 #include "hil/scheduler/credit_scheduler.hh"
-#include "util/def.hh"
-#include "util/algorithm.hh"
+#include "icl/icl.hh"           // pICL->read/write(...)
+#include "sim/simulator.hh"     // allocate/schedule/deschedule/scheduled/getTick
+#include "sim/trace.hh"         // debugprint, LOG_HIL_CREDIT_SCHEDULER
+#include <algorithm>            // std::min
+#include <cstdio>
+#include <inttypes.h>
 
-namespace SimpleSSD {
-namespace HIL {
-
-#ifndef PAGE_SIZE
-#define PAGE_SIZE 4096ULL
-#endif
+namespace SimpleSSD { namespace HIL {
 
 #define PR_SECTION LOG_HIL_CREDIT_SCHEDULER
 
-CreditScheduler::CreditScheduler(ICL::ICL* iclPtr,
-                                 uint64_t creditPerRoundPages,
-                                 uint64_t intervalTicks,
-                                 uint64_t initialCredit)
-    : pICL(iclPtr),
-      creditPerRound(creditPerRoundPages),
-      roundInterval(intervalTicks),
-      nextRefillTick(0),
-      initialUserCredit(initialCredit) {
-  debugprint(LOG_HIL,
-             "CreditScheduler | init creditPerRound=%lu pages interval=%lu initialCredit=%lu",
-             creditPerRound, roundInterval, initialCredit);
+// ------------ 建構 / 解構 ----------------------------------------------------
+CreditScheduler::CreditScheduler(ICL::ICL* icl, uint64_t period_ticks, uint64_t ticks_per_sec)
+    : pICL(icl), periodTicks_(period_ticks), ticksPerSec_(ticks_per_sec)
+{   
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "ctor: periodTicks=%" PRIu64 ", ticksPerSec=%" PRIu64,
+               periodTicks_, ticksPerSec_);
+
+    // 計算每週期應發放的總 pages (throughput-based 批量發放)
+    pagesPerPeriod_ =
+        static_cast<double>(PagesPerSec) *
+        static_cast<double>(periodTicks_) /
+        static_cast<double>(ticksPerSec_);
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "pagesPerPeriod = %.3f pages / %" PRIu64 " ticks", 
+               pagesPerPeriod_, periodTicks_);
+
+    // 1) 先固定把 1001、1002 建起來，確保 stats 一開始就有 per-user 欄位
+    statUsers_.clear();
+    statUsers_.push_back(1001);
+    statUsers_.push_back(1002);
+    for (uint32_t uid : statUsers_) {
+        auto &acc = getOrCreateUser(uid);
+        acc.isActive       = false;
+        acc.credit         = 0;
+        acc.lastRefillTick = SimpleSSD::getTick();
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "init user uid=%u weight=%" PRIu64 " cap=%" PRIu64 " credit=%" PRIu64,
+                   uid, acc.weight, acc.creditCap, acc.credit);
+    }
+
+    // 配置週期事件（使用 SimpleSSD::Simulator 的事件 API）
+    refillEvent = SimpleSSD::allocate([this](uint64_t now){
+        this->processEvent(now);
+    });
+
+    // 僅 allocate，不立即 schedule
+    timerStarted = false;
+
+    // 重要：把 lastGlobalRefillTick_ 改作「下一次應補發的相位」
+    // 尚未啟動前不生效，等第一次 start 時設成 now + periodTicks_
+    lastGlobalRefillTick_ = 0;
+
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "refillEvent allocated, will be scheduled when HIL is ready");
 }
 
 CreditScheduler::~CreditScheduler() {
-  debugprint(LOG_HIL, "CreditScheduler | destroyed");
-}
-
-CreditScheduler::UserInfo &
-CreditScheduler::user(uint32_t uid)
-{
-    auto it = users.find(uid);
-    if (it == users.end()) {
-        UserInfo u;
-        u.credit         = initialUserCredit;
-        u.initialCredit  = initialUserCredit;
-        u.lastRefillTick = currentTick;
-        if (uid == 1001) u.weight = 2;
-        if (uid == 1002) u.weight = 8;
-        return users.emplace(uid, u).first->second;
+    // 確保事件已取消並釋放
+    if (SimpleSSD::scheduled(refillEvent, nullptr)) {
+        SimpleSSD::deschedule(refillEvent);
+        debugprint(LOG_HIL_CREDIT_SCHEDULER, "dtor: deschedule timer");
     }
-    return it->second;
+    debugprint(LOG_HIL_CREDIT_SCHEDULER, "dtor: deallocate timer");
+    SimpleSSD::deallocate(refillEvent);
 }
 
-void CreditScheduler::refillCredits(uint64_t now)
+// ------------ submitRequest -------------------------------------------------
+void CreditScheduler::submitRequest(Request& req)
 {
-    debugprint(LOG_HIL, "refillCredits: now=%lu", now);
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "submit: uid=%u op=%d len=%" PRIu64 " now=%" PRIu64,
+               req.userID, int(req.op), (uint64_t)req.length, SimpleSSD::getTick());
 
-    /* ---------------------------------------------------- *
-     * 可調參數                                             *
-     * ---------------------------------------------------- */
-    const uint32_t kRounds   = 20;      // 每 kRounds*roundInterval 才補一次
-    const uint64_t baseCred  = creditPerRound;     // 每輪基本 token 數
-    const uint64_t maxCredit = 100;    // 上限 (原本就有)
-
-    for (auto &kv : users) {
-        auto &user = kv.second;
-
-        /* --------- 1. 判斷是否到補點門檻 ------------------ */
-        uint64_t elapsed = now - user.lastRefillTick;
-        if (elapsed < roundInterval * kRounds)
-            continue;                              // 還沒到下一輪
-
-        /* --------- 2. 權重式 token-bucket ---------------- */
-        /* 例：weight = 8 or 2 → 8:2 配額                         */
-        uint64_t creditToAdd = baseCred * user.weight;
-        user.credit += creditToAdd;
-
-        /* --------- 3. 上限 (cap) ------------------------- */
-        if (user.credit > maxCredit)
-            user.credit = maxCredit;
-
-        user.lastRefillTick = now;                 // 重設基準
-
-        debugprint(LOG_HIL,
-                   "CreditScheduler | refill +%lu pages to user %u (total=%lu)",
-                   creditToAdd, kv.first, user.credit);
-    }
-}
-
-
-void CreditScheduler::drainPending() {
-  debugprint(LOG_HIL, "DrainPending called, pendingQueue size=%zu", pendingQueue.size());
-  size_t moved = 0;
-  size_t sz = pendingQueue.size();
-  for (size_t i = 0; i < sz; ++i) {
-    Request req = pendingQueue.front();
-    pendingQueue.pop();
-
-    uint64_t pages = (req.length + PAGE_SIZE - 1) / PAGE_SIZE;
-    auto &u = user(req.userID);
-
-    debugprint(LOG_HIL, "drainPending: checking uid=%u pages=%lu credit=%lu", req.userID, pages, u.credit);
-
-    if (u.credit >= pages) {
-      u.credit -= pages;
-      u.consumed += pages;
-      requestQueue.push(req);
-      ++moved;
-      debugprint(LOG_HIL, "drainPending: moved req %lu uid=%u to ready queue", req.reqID, req.userID);
+    if (req.userID == 0) {               // admin
+        adminQueue.push(req);
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "submit: -> adminQ size=%zu", adminQueue.size());
     } else {
-      pendingQueue.push(req);
-    }
-  }
-  if (moved)
-    debugprint(LOG_HIL, "CreditScheduler | moved %zu requests from pending to ready", moved);
-}
+        auto& acc = getOrCreateUser(req.userID);
+        acc.queue.push(req);
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "submit: -> user[%u] Q size=%zu, credit=%" PRIu64,
+                   req.userID, acc.queue.size(), acc.credit);
 
-void CreditScheduler::submitRequest(Request &req) {
-  uint64_t pages = (req.length + PAGE_SIZE - 1) / PAGE_SIZE;
-  auto &u = user(req.userID);
-
-  debugprint(LOG_HIL,
-             "CreditScheduler | submit req %lu uid=%u pages=%lu credit=%lu, pendingQueue=%zu, requestQueue=%zu",
-             req.reqID, req.userID, pages, u.credit, pendingQueue.size(), requestQueue.size());
-
-  if (u.credit >= pages) {
-    u.credit -= pages;
-    u.consumed += pages;
-    requestQueue.push(req);
-  } else {
-    pendingQueue.push(req);
-    debugprint(LOG_HIL,
-               "CreditScheduler | uid=%u insufficient credit (%lu < %lu) -> pending",
-               req.userID, u.credit, pages);
-  }
-}
-
-void CreditScheduler::schedule() {
-  debugprint(LOG_HIL, "schedule called, requestQueue.size() = %zu", requestQueue.size());
-  if (requestQueue.empty()) return;
-
-  Request req = requestQueue.front();
-  requestQueue.pop();
-
-  currentTick += applyLatency(CPU::CREDIT_SCHEDULER, CPU::SCHEDULE);
-
-  ICL::Request iclReq(req);
-  
-  switch (req.op) {
-        case OpType::READ:
-            pICL->read (iclReq, currentTick);
-            break;
-        case OpType::WRITE:
-            pICL->write(iclReq, currentTick);
-            break;
-        case OpType::CREDIT_ONLY:
-            debugprint(LOG_HIL,
-                       "Token-only req uid=%u pages=%lu granted at tick=%lu",
-                       req.userID,
-                       (req.length + PAGE_SIZE - 1) / PAGE_SIZE,
-                       currentTick);
-            break;
-        case OpType::ISC_RESULT:
-            /* nothing to send to ICL, 只是純扣點 */
-            break;
-        default:
-            panic("Unknown OpType in scheduler");
+        if (!acc.isActive) {
+            acc.isActive       = true;
+            acc.credit         = 0;
+            acc.lastRefillTick = SimpleSSD::getTick();
+            debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                       "submit: user[%u] activated at tick=%" PRIu64,
+                       req.userID, acc.lastRefillTick);
+            
+            // 第一個用戶啟動時開始 timer（相位固定為 now + periodTicks_）
+            if (!timerStarted) {
+                auto first = SimpleSSD::getTick() + periodTicks_;
+                lastGlobalRefillTick_ = first; // 注意：此變數語意改為「下一次補發相位」
+                debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                           "starting timer, first refill phase at tick=%" PRIu64, first);
+                SimpleSSD::schedule(refillEvent, first);
+                timerStarted = true;
+            }
+        }
     }
 
-    debugprint(LOG_HIL,
-               "Dispatch req %lu uid=%u op=%d len=%lu tick=%lu",
-               req.reqID, req.userID, static_cast<int>(req.op),
-               req.length, currentTick);
-} 
+    // 立即嘗試在當前 tick 做「到期則補、再派發」
+    tick(SimpleSSD::getTick());
+}
 
-
-void CreditScheduler::tick(uint64_t now)
+// ------------ processEvent --------------------------------------------------
+void CreditScheduler::processEvent(uint64_t now)
 {
-  currentTick = now;
-
-  /* 先試著補 credit，再搬 pending 至 ready */
-  refillCredits(now);
-  drainPending();
-
-  /* 執行一次 FCFS 排程 */
-  schedule();
+    debugprint(LOG_HIL_CREDIT_SCHEDULER, "timer: now=%" PRIu64, now);
+    tick(now);
+    SimpleSSD::schedule(refillEvent, lastGlobalRefillTick_);
 }
 
-void CreditScheduler::getStatList(std::vector<Stats> &list, std::string prefix) {
-  Stats t;
-  t.name = prefix + "credit.consumed";
-  t.desc = "Total credit consumed (pages)";
-  list.push_back(t);
+// ------------ tick()  -------------------------------------------------------
+void CreditScheduler::tick(Tick now)
+{
+    if (inTick) return;
+    inTick = true;
 
-  t.name = prefix + "credit.pending";
-  t.desc = "Pending queue length";
-  list.push_back(t);
+    // (0) 先把 admin queue 派光
+    size_t admin_dispatched = 0;
+    while (!adminQueue.empty()) {
+        Request req = adminQueue.front();
+        adminQueue.pop();
+        dispatchICL(req, now);
+        ++admin_dispatched;
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "tick:%" PRIu64 " admin-dispatched=%zu", now, admin_dispatched);
+    }
 
-  t.name = prefix + "credit.ready";
-  t.desc = "Ready queue length";
-  list.push_back(t);
+    // (1) 固定相位補發：逐期補齊所有到期的 period
+    while (timerStarted && now >= lastGlobalRefillTick_) {
+        uint64_t activeTotalWeight = 0;
+        // Idle 寬限期：queue 暫空但尚在寬限內仍計入分母
+        for (auto &kv : users) {
+            const auto &acc = kv.second;
+            if (acc.isActive) activeTotalWeight += acc.weight;
+        }
+
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "refill-phase: phaseTick=%" PRIu64 " activeW=%" PRIu64,
+                   lastGlobalRefillTick_, activeTotalWeight);
+
+        // 相位內彙總（便於 CREDSTAT）：只針對常見 UID 1001/1002（若不存在則為 0）
+        uint64_t add1001 = 0, add1002 = 0;
+
+        if (activeTotalWeight > 0) {
+            for (auto &kv : users) {
+                auto &acc = kv.second;
+                if (!acc.isActive) continue;
+
+                double exact =
+                    pagesPerPeriod_ *
+                    (static_cast<double>(acc.weight) / static_cast<double>(activeTotalWeight));
+                double sum  = exact + acc.carry;
+                uint64_t add = static_cast<uint64_t>(sum);   // 向下取整灌 token
+                acc.carry   = sum - static_cast<double>(add);
+
+                uint64_t before = acc.credit;
+                acc.credit = std::min(acc.credit + add, acc.creditCap);
+                acc.lastRefillTick = lastGlobalRefillTick_;  // 真正補發時刻
+
+                if (add) {
+                    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                               "refill: uid=%u add=%" PRIu64 " carry=%.4f credit=%" PRIu64 " cap=%" PRIu64,
+                               (unsigned)kv.first, add, acc.carry, acc.credit, acc.creditCap);
+                    if (before + add > acc.creditCap) {
+                        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                                   "refill-cap: uid=%u cap=%" PRIu64 " before=%" PRIu64 " add=%" PRIu64,
+                                   (unsigned)kv.first, acc.creditCap, before, add);
+                    }
+                    if ((unsigned)kv.first == 1001) add1001 += add;
+                    if ((unsigned)kv.first == 1002) add1002 += add;
+                }
+            }
+        }
+
+        // 低噪音彙總：關心 1001/1002 的相位配額與目前 credit（若不存在則 0）
+        uint64_t c1 = 0, c2 = 0;
+        { auto it = users.find(1001); if (it != users.end()) c1 = it->second.credit; }
+        { auto it = users.find(1002); if (it != users.end()) c2 = it->second.credit; }
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "CREDSTAT: phase=%" PRIu64 " activeW=%" PRIu64
+                   " add{1001}=%" PRIu64 " add{1002}=%" PRIu64
+                   " credit{1001}=%" PRIu64 " credit{1002}=%" PRIu64,
+                   lastGlobalRefillTick_, activeTotalWeight, add1001, add1002, c1, c2);
+ 
+        // 推進到下一個固定相位
+        lastGlobalRefillTick_ += periodTicks_;
+    }
+
+    // (2) 真正 RR 交錯派發：每輪最多派發 1 筆，再從 lastChosenUid 的下一位重啟
+    if (!users.empty()) {
+        const size_t MAX_DISPATCH_PER_TICK = 4096; // 安全上限，避免無窮迴圈
+        size_t rounds = 0;
+
+        for (; rounds < MAX_DISPATCH_PER_TICK; ++rounds) {
+            bool dispatched = false;
+
+            // 起點：永遠從 lastChosenUid 的下一位
+            auto it = users.find(lastChosenUid);
+            if (it == users.end() || ++it == users.end()) it = users.begin();
+
+            size_t visited = 0;
+            while (visited++ < users.size()) {
+                if (it == users.end()) it = users.begin();
+                UserAccount &acc = it->second;
+                if (!acc.queue.empty()) {
+                    const Request& front = acc.queue.front();
+                    uint64_t need = (front.length + PageSz - 1) / PageSz;  // 向上取整頁數
+
+                    if (acc.credit >= need) {
+                        acc.credit -= need;
+                        acc.totalConsumed += need;
+                        lastChosenUid = it->first;
+
+                        dispatchICL(front, now);
+                        acc.queue.pop();
+                        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                                   "dispatch: uid=%u need=%" PRIu64 " credit-left=%" PRIu64
+                                   " totalConsumed=%" PRIu64 " Qsize=%zu",
+                                   (unsigned)lastChosenUid, need, acc.credit,
+                                   acc.totalConsumed, acc.queue.size());
+                        dispatched = true;
+                        break; // 本輪派發 1 筆就跳出，回到最外層 for 再開始下一輪
+                    } else {
+                        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                                   "skip: uid=%u need=%" PRIu64 " credit=%" PRIu64 " (不足)",
+                                   (unsigned)it->first, need, acc.credit);
+                    }
+                }
+                ++it;
+            }
+
+            if (!dispatched) break; // 當前無人可派發，結束
+        }
+    }
+
+    inTick = false;
 }
 
-void CreditScheduler::getStatValues(std::vector<double> &val) {
-  uint64_t consumed = 0;
-  for (auto &kv : users) consumed += kv.second.consumed;
-  val.push_back(consumed);
-  val.push_back(pendingQueue.size());
-  val.push_back(requestQueue.size());
+// ------------ dispatch 到 ICL ----------------------------------------------
+void CreditScheduler::dispatchICL(const Request& req, Tick t)
+{
+    // ICL::Request 需要「非 const 參考」：建立可變副本避免 const 轉換錯誤
+    Request req_mut = req;
+    ICL::Request iclReq(req_mut);
+
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "ICL: t=%" PRIu64 " uid=%u op=%d len=%" PRIu64,
+               (uint64_t)t, req.userID, int(req.op), (uint64_t)req.length);
+           
+    switch (req.op) {
+        case OpType::READ:  pICL->read (iclReq, t); break;
+        case OpType::WRITE: pICL->write(iclReq, t); break;
+        default:            /* 管理/ISC 可自行擴充 */  break;
+    }
 }
 
-void CreditScheduler::resetStatValues() {
-  for (auto &kv : users) kv.second = {};
-  while (!pendingQueue.empty()) pendingQueue.pop();
-  while (!requestQueue.empty()) requestQueue.pop();
-}
-
-bool CreditScheduler::pendingForUser(uint32_t uid) const {
-  std::queue<Request> q = pendingQueue;
-  while (!q.empty()) {
-    if (q.front().userID == uid) return true;
-    q.pop();
-  }
-  return false;
-}
-
-bool CreditScheduler::checkCredit(uint32_t uid, size_t need) const {
+// ------------ User 管理 ------------------------------------------------------
+CreditScheduler::UserAccount&
+CreditScheduler::getOrCreateUser(uint32_t uid)
+{
     auto it = users.find(uid);
-    if (it == users.end())
-        return initialUserCredit >= need;
-    return it->second.credit >= need;
+    if (it != users.end()) return it->second;
+
+    UserAccount acc;
+    acc.weight        = (uid == 1002 ? 8 : uid == 1001 ? 2 : 1); // 範例：依 UID 給不同權重
+    acc.creditCap     = static_cast<uint64_t>(pagesPerPeriod_ * 500); // 500 periods 緩衝
+    if (acc.creditCap < 50) acc.creditCap = 50;
+
+    users.emplace(uid, acc);
+
+    // 重新計算總權重（保留原本語義）
+    totalWeight_ = 0;
+    for (auto it2 = users.begin(); it2 != users.end(); ++it2) {
+        totalWeight_ += it2->second.weight;
+    }
+    debugprint(LOG_HIL_CREDIT_SCHEDULER, 
+               "user created: uid=%u weight=%" PRIu64 " totalWeight=%" PRIu64,
+               uid, acc.weight, totalWeight_);
+
+    return users[uid];
 }
 
-void CreditScheduler::useCredit(uint32_t uid, size_t used) {
-    auto &u = const_cast<CreditScheduler *>(this)->user(uid); // 建立帳戶 (若尚未存在)
-    if (u.credit >= used)
-        u.credit -= used;
-    else
-        u.credit = 0;
+// ───────── Scheduler 統計介面（per-user credit）─────────
+void CreditScheduler::getStatList(std::vector<Stats> &list, std::string prefix) {
+  Stats s;
+  
+  // (1) 總消耗
+  s.name = prefix + "credit.total.consumed";
+  s.desc = "Total credit consumed (pages)";
+  list.push_back(s);
+  
+  // (2) 每 user 消耗（固定順序：constructor 初始化的 statUsers_）
+  for (uint32_t uid : statUsers_) {
+    s.name = prefix + "credit.user.uid" + std::to_string(uid) + ".consumed";
+    s.desc = "Per-user credit consumed (pages)";
+    list.push_back(s);
+  }
+  
+  // (3) 每 user 隊列中的請求數量
+  for (uint32_t uid : statUsers_) {
+    s.name = prefix + "credit.user.uid" + std::to_string(uid) + ".queue_size";
+    s.desc = "Per-user pending requests in queue";
+    list.push_back(s);
+  }
+  
+  // (4) 總體統計
+  s.name = prefix + "credit.pending";
+  s.desc = "Total requests awaiting credit";
+  list.push_back(s);
+  
+  s.name = prefix + "credit.ready";
+  s.desc = "Total requests ready to dispatch";
+  list.push_back(s);
 }
 
-}  // namespace HIL
-}  // namespace SimpleSSD
+void CreditScheduler::getStatValues(std::vector<double>& val) {
+    // (1) 總消耗
+    uint64_t consumed_total = 0;
+    for (auto const& kv : users)
+        consumed_total += kv.second.totalConsumed;
+    val.push_back(static_cast<double>(consumed_total));
+
+    // (2) 每 user 消耗（若該 user 尚未建立，值為 0）
+    for (uint32_t uid : statUsers_) {
+        auto it = users.find(uid);
+        double v = (it == users.end()) ? 0.0 : static_cast<double>(it->second.totalConsumed);
+        val.push_back(v);
+    }
+    
+    // (3) 每 user 隊列中的請求數量
+    for (uint32_t uid : statUsers_) {
+        auto it = users.find(uid);
+        double queueSize = (it == users.end()) ? 0.0 : static_cast<double>(it->second.queue.size());
+        val.push_back(queueSize);
+    }
+
+    // (4) 掃描 queue，估算 pending / ready
+    uint64_t pending = 0;
+    uint64_t ready   = adminQueue.size();     // admin I/O 視為 ready
+    for (auto const& kv : users) {
+        const auto& acc = kv.second;
+        if (acc.queue.empty()) continue;
+        std::queue<Request> tmpQ = acc.queue;
+        uint64_t creditLeft = acc.credit;
+        while (!tmpQ.empty()) {
+            const Request& rq = tmpQ.front();
+            uint64_t need = (rq.length + PageSz - 1) / PageSz;
+            if (creditLeft >= need) {
+                ++ready;
+                creditLeft -= need;
+                tmpQ.pop();
+            } else {
+                pending += tmpQ.size();   // 剩餘全部視為欠 token
+                break;
+            }
+        }
+    }
+    val.push_back(static_cast<double>(pending));
+    val.push_back(static_cast<double>(ready));
+
+}
+void CreditScheduler::resetStatValues() {
+    debugprint(LOG_HIL_CREDIT_SCHEDULER, "stats: reset");
+    for (auto& kv : users) {
+        auto& acc = kv.second;
+        acc.credit         = 0;
+        acc.carry          = 0.0;
+        acc.totalConsumed  = 0;
+        acc.isActive       = false;
+        acc.lastRefillTick = SimpleSSD::getTick();
+        while (!acc.queue.empty()) acc.queue.pop();
+    }
+    while (!adminQueue.empty()) adminQueue.pop();
+    lastChosenUid = 0;
+    // 相位重置：下次啟動時再設定
+    lastGlobalRefillTick_ = 0;
+}
+
+}} // namespace SimpleSSD::HIL

@@ -50,7 +50,8 @@ typedef enum {
   NVME_ENABLE_DISK_IMAGE,
   NVME_STRICT_DISK_SIZE,
   NVME_DISK_IMAGE_PATH,
-  NVME_USE_COW_DISK
+  NVME_USE_COW_DISK,
+  NVME_SCHEDULER_TYPE,
 } NVME_CONFIG;
 
 class Config : public BaseConfig {
@@ -72,6 +73,7 @@ class Config : public BaseConfig {
   bool strictDiskSize;           //!< Default: False
   bool useCopyOnWriteDisk;       //!< Default: False
   std::unordered_map<uint16_t, std::string> diskImagePaths;  //!< Default: ""
+  uint8_t schedulerType;         //!< Default: 0:FCFS
 
  public:
   Config();

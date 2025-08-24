@@ -134,6 +134,7 @@ int getResult(uint32_t id, nvme_config_t config, void *data, size_t dlen) {
   config.metadata = nullptr;
 
   setupSubcmd(&config.slba, ISC_SUBCMD_SLET_RES, id);
+  config.cdw03 = getuid();
 
   if (!config.data) {
     perrno("malloc failed");
@@ -168,7 +169,7 @@ int getResultSize(uint32_t id, nvme_config_t config, uint64_t *data) {
   config.data = (char *)aligned_alloc(HOST_PAGE_SIZE, config.data_len);
   pr("get resultsize alloc end");
   setupSubcmd(&config.slba, ISC_SUBCMD_SLET_RESSZ, id);
-
+  config.cdw03 = getuid();
   if (!config.data) {
     perrno("malloc failed");
     exit(-1);

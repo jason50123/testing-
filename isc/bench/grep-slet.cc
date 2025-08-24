@@ -7,14 +7,12 @@
 using std::string;
 
 using namespace SimpleSSD::ISC;
-#define ISC_SUBCMD_SCHEDULER_FCFS 1;
 struct TaskConfig {
   nvme_config_t nvme;
   char *mount_point;
   char *path, *pattern;
   uint32_t slet_id;
   bool init_runtime;
-  uint32_t scheduler_type;
 } cfg;
 #define setSletOpt(cfg, k, v, vsz)                                             \
   {                                                                            \
@@ -58,7 +56,6 @@ static KVOpt_t keys[] = {
     {"pattern", &cfg.pattern, val2str, 1, 0, "target pattern"},
     {"mountpoint", &cfg.mount_point, val2str, 1, 0, "filesystem mount point"},
     {"id", &cfg.slet_id, val2u32, 1, 0, "slet id"},
-    {"scheduler", &cfg.scheduler_type, val2u32, 0, 0, "scheduler type (1:FCFS, 2:Credit, 3:FLIN)"},
 };
 static size_t numFlags = sizeof(flags) / sizeof(flags[0]);
 static size_t numKeys = sizeof(keys) / sizeof(keys[0]);
@@ -66,7 +63,6 @@ static size_t numKeys = sizeof(keys) / sizeof(keys[0]);
 int main(int argc, const char *argv[]) {
   memset(&cfg, 0, sizeof(cfg));
   cfg.nvme.nsid = 1;
-  cfg.scheduler_type = ISC_SUBCMD_SCHEDULER_FCFS;
   setArgs(argc, argv, keys, numKeys, flags, numFlags);
 
 #ifndef NO_M5
@@ -75,8 +71,6 @@ int main(int argc, const char *argv[]) {
       exit(-__LINE__);
     pr("Runtime Init done");
 
-    if (setScheduler(cfg.nvme, cfg.scheduler_type)) exit(-__LINE__);
-    pr("Scheduler set to type %u", cfg.scheduler_type);
   }
 #endif
 

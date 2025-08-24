@@ -110,7 +110,7 @@ void FTL::read(void *buf, size_t ofs, size_t sz _ADD_SIM_PARAMS) {
   };
 
 #ifndef ISC_TEST
-  /* ---------- Credit‑Scheduler flow control ---------- */
+  /* ---------- NEW Credit Scheduler Flow Control ---------- */
 
   uint32_t uid = 0;
    
@@ -118,28 +118,35 @@ void FTL::read(void *buf, size_t ofs, size_t sz _ADD_SIM_PARAMS) {
     uid = ((HIL::Request *)simCtx)->userID;
 
   if (gScheduler) {
-    pr("FTL::read() token-bucket branch entered");
+    pr("FTL::read() NEW Credit Scheduler branch entered");
     uint64_t pages = (sz + PAGE_SIZE - 1) / PAGE_SIZE;
     pr("FTL::read | uid=%u | I/O=%lu B (%lu pages) | simTick=%lu",
        uid, sz, pages, simTick);
 
-    HIL::Request credReq{};
-    credReq.userID = uid;
-    credReq.prio   = 0;
-    credReq.length = pages * PAGE_SIZE;
-    credReq.op     = HIL::OpType::CREDIT_ONLY;
+    // 檢查用戶是否有足夠的credit
+    if (!gScheduler->checkCredit(uid, pages)) {
+        pr("FTL::read | uid=%u | Insufficient credit, submitting credit-only request", uid);
+        
+        HIL::Request credReq{};
+        credReq.userID = uid;
+        credReq.prio   = 0;
+        credReq.length = pages * PAGE_SIZE;
+        credReq.op     = HIL::OpType::CREDIT_ONLY;
 
-    gScheduler->submitRequest(credReq);
-    gScheduler->tick(simTick);
-
-    /* busy-wait till user is not in pending queue */
-    while (gScheduler->pendingForUser(uid)) {
-        simTick += 10;                        // add tick
-        gScheduler->tick(simTick);
+        gScheduler->submitRequest(credReq);
+        
+        // 等待直到用戶不在pending queue
+        while (gScheduler->pendingForUser(uid)) {
+            simTick += 10;
+            gScheduler->tick(simTick);
+        }
     }
 
-    pr("FTL::read | uid=%u | token granted, continue I/O | simTick=%lu",
-       uid, simTick);
+    // 直接扣除credit（新設計中ISC任務實時扣除）
+    gScheduler->useCredit(uid, pages);
+    
+    pr("FTL::read | uid=%u | Credit charged: %lu pages, continue I/O | simTick=%lu",
+       uid, pages, simTick);
   }
 
 #endif /* !ISC_TEST */

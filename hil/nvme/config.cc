@@ -45,6 +45,8 @@ const char NAME_ENABLE_DISK_IMAGE[] = "EnableDiskImage";
 const char NAME_STRICT_DISK_SIZE[] = "StrictSizeCheck";
 const char NAME_DISK_IMAGE_PATH[] = "DiskImageFile";
 const char NAME_USE_COW_DISK[] = "UseCopyOnWriteDisk";
+const char NAME_SCHEDULER_TYPE[] = "SchedulerType";
+
 
 Config::Config() {
   pcieGen = PCIExpress::PCIE_3_X;
@@ -63,6 +65,7 @@ Config::Config() {
   enableDiskImage = false;
   strictDiskSize = false;
   useCopyOnWriteDisk = false;
+  schedulerType = 0;
 }
 
 bool Config::setConfig(const char *name, const char *value) {
@@ -167,6 +170,9 @@ bool Config::setConfig(const char *name, const char *value) {
   else if (MATCH_NAME(NAME_USE_COW_DISK)) {
     useCopyOnWriteDisk = convertBool(value);
   }
+  else if (MATCH_NAME(NAME_SCHEDULER_TYPE)) {
+        schedulerType = (uint8_t)strtoul(value, nullptr, 10);
+    }
   else {
     ret = false;
   }
@@ -237,6 +243,9 @@ uint64_t Config::readUint(uint32_t idx) {
       break;
     case NVME_LBA_SIZE:
       ret = lbaSize;
+      break;
+    case NVME_SCHEDULER_TYPE:
+      ret = schedulerType;
       break;
   }
 

@@ -538,7 +538,8 @@ void Namespace::kickPendingISC()
     while (qsz--) {
         IOContext *ctx = pendingISC.front();
         pendingISC.pop();
-
+        pr("PENDING_POP  uid=%u  left=%zu  tick=%lu",
+           ctx->uid, pendingISC.size(), getTick());
         uint64_t tick = getTick();          //get current tick
         size_t szRes  = *(size_t*)ISC::Runtime::getOpt(
                             ISC_SUBCMD_OPT(ctx->slba),
@@ -546,7 +547,7 @@ void Namespace::kickPendingISC()
         uint64_t pages = (szRes + PAGE_SIZE - 1) / PAGE_SIZE;
 
         /* check credit again */
-        if (gScheduler && !gScheduler->checkCredit(ctx->uid, pages*PAGE_SIZE)) {
+        if (gScheduler && !gScheduler->checkCredit(ctx->uid, pages)) {
             /* still not enough */
             if (!evKickISC)
               evKickISC = allocate([this](uint64_t){ kickPendingISC(); });
@@ -655,7 +656,7 @@ void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
 
       // do not read data from disk
       if (ISC_SUBCMD_IS(pContext->slba, ISC_SUBCMD_SLET_RES)) {
-        pr("Runtime getRes         -----------------------------------------");
+        pr("Runtime getRes         -----------ch------------------------------");
         auto id = ISC_SUBCMD_OPT(pContext->slba);
         auto res = ISC::Runtime::getOpt(id, ISC_KEY_RESULT, tick, nullptr);
         auto psz = ISC::Runtime::getOpt(id, ISC_KEY_RESULT_SIZE, tick, nullptr);
@@ -666,9 +667,11 @@ void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
 
         bool granted = true;
         if (gScheduler) {
-          if (!gScheduler->checkCredit(pContext->uid, pages*PAGE_SIZE)) {
+          if (!gScheduler->checkCredit(pContext->uid, pages)) {
             granted = false;
             pendingISC.push(pContext);
+            pr("PENDING_PUSH uid=%u need=%lu pages  pending_len=%zu  tick=%lu",
+            pContext->uid, pages, pendingISC.size(), tick);
             if (!evKickISC)
               evKickISC = allocate([this](uint64_t){ kickPendingISC(); });
             schedule(evKickISC, tick + 50);

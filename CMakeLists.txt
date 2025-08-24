@@ -45,6 +45,34 @@ endif ()
 # Add subproject
 add_subdirectory(${PROJECT_SOURCE_DIR}/lib/mcpat)
 
+#------------------------------------------------------------#
+# ── 自動偵測 gem5 路徑（以目前檔案位置 FS/src/dev/storage/simplessd 為基準）──
+# GEM5_SRC_DIR = FS/src
+get_filename_component(GEM5_SRC_DIR "${PROJECT_SOURCE_DIR}/../../.." ABSOLUTE)
+# GEM5_ROOT    = FS
+get_filename_component(GEM5_ROOT    "${GEM5_SRC_DIR}/.." ABSOLUTE)
+
+# 允許用環境變數覆寫 ISA；預設用 ARM（因為你的 scons 正在 build/ARM）
+set(GEM5_ISA $ENV{GEM5_ISA})
+if (NOT GEM5_ISA)
+  set(GEM5_ISA "ARM")
+endif ()
+set(GEM5_BUILD_DIR "${GEM5_ROOT}/build/${GEM5_ISA}")
+
+message(STATUS "GEM5_ROOT      = ${GEM5_ROOT}")
+message(STATUS "GEM5_SRC_DIR   = ${GEM5_SRC_DIR}")
+message(STATUS "GEM5_BUILD_DIR = ${GEM5_BUILD_DIR}")
+
+# ── 把 gem5 的頭檔路徑加進來（src + build/<ISA> + build/<ISA>/config）──
+include_directories(
+  ${GEM5_SRC_DIR}
+  ${GEM5_BUILD_DIR}
+  ${GEM5_BUILD_DIR}/config
+)
+
+#------------------------------------------------------------#
+
+
 # Set include directories
 include_directories(
   ${PROJECT_SOURCE_DIR}
@@ -146,7 +174,6 @@ set(SRC_HIL_SCHEDULER
   hil/scheduler/credit_scheduler.cc
   hil/scheduler/fcfs_scheduler.cc
   hil/scheduler/scheduler.cc
-  hil/scheduler/flin_scheduler.cc
 )
 set(SRC_HIL
   hil/hil.cc
@@ -235,4 +262,9 @@ add_library(simplessd STATIC
   ${SRC_SIM}
   ${SRC_UTIL}
 )
+# 只對 simplessd 這個 target 降級「未使用」類警告，避免 gem5 標頭擋編譯
+# target_compile_options(simplessd PRIVATE
+#     -Wno-error=unused-parameter
+#     -Wno-error=unused-variable
+# )
 target_link_libraries(simplessd mcpat)

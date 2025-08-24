@@ -49,8 +49,31 @@ namespace HIL {
 
 HIL::HIL(ConfigReader &c) : conf(c), reqCount(0), lastScheduled(0) {
   pICL = new ICL::ICL(conf);
-  currentSchedulerType = SchedulerType::FCFS;  // 預設使用 FCFS
-  pScheduler = new FCFSScheduler(pICL);
+  
+  uint8_t schedulerConfig = 0;
+  schedulerConfig = conf.readUint(CONFIG_NVME, NVMe::NVME_SCHEDULER_TYPE);
+
+  switch (schedulerConfig) {
+    case 0: //FCFS
+      pScheduler = new FCFSScheduler(pICL);
+      currentSchedulerType = SchedulerType::FCFS;
+      debugprint(LOG_HIL, "Use FCFSScheduler (cfg)");
+      break;
+    case 1: //Credit
+      // 動態 credit scheduler 參數：
+      // baseCreditRate: 200 pages/refill (適中的補充量)
+      // baseCreditCap: 1000 pages (基礎上限，會動態調整)  
+      // refillInterval: 25M ticks ≈ 0.5 秒 (合理的補充間隔)
+      // pScheduler = new CreditScheduler(pICL, /*rate*/200, /*cap*/1000, /*interval*/0);
+      pScheduler = new CreditScheduler(pICL,
+                                 10 * SimClock::Int::us,
+                                 SimClock::Frequency);
+      currentSchedulerType = SchedulerType::CREDIT;
+      debugprint(LOG_HIL, "Use Dynamic CreditScheduler (cfg)");
+      break;
+  }
+  
+  gScheduler = pScheduler; 
   ISC::SIM::FTL::setCache(pICL);
 
   memset(&stat, 0, sizeof(stat));
@@ -76,13 +99,11 @@ void HIL::read(Request &req) {
                " + %" PRIu64,
                pReq->reqID, pReq->range.slpn, pReq->range.nlp, pReq->offset,
                pReq->length);
-
+      
     pr("HIL | Submitting read request to scheduler");
     pScheduler->submitRequest(*pReq);
     pScheduler->tick(tick);
     pr("HIL | Read request submitted to scheduler");
-
-
     stat.request[0]++;
     stat.iosize[0] += pReq->length;
     updateBusyTime(0, beginAt, tick);
@@ -115,9 +136,11 @@ void HIL::switchScheduler(SchedulerType type) {
       pr("Switched to FCFS scheduler");
       break;
     case SchedulerType::CREDIT:
-      pScheduler = new CreditScheduler(pICL, 2, 1000, 30);
+      pScheduler = new CreditScheduler(pICL,
+                                 10 * SimClock::Int::us,
+                                 SimClock::Frequency);     
       gScheduler = pScheduler; 
-      pr("Switched to Credit scheduler");
+      pr("Switched to Dynamic Credit scheduler");
       break;
     // case SchedulerType::FLIN:
     //   pScheduler = new FLINScheduler(1000000, 1000000, 100000, 500000);
@@ -455,6 +478,13 @@ void HIL::getStatList(std::vector<Stats> &list, std::string prefix) {
   temp.desc = "Total device busy time";
   list.push_back(temp);
 
+  if (pScheduler) {
+      debugprint(LOG_HIL,
+             "Scheduler | adding stats to list");
+      /* 建議用新層級前綴，以免名字衝突 */
+      pScheduler->getStatList(list, prefix + "sched.");
+  } 
+
   pICL->getStatList(list, prefix);
 }
 
@@ -468,6 +498,9 @@ void HIL::getStatValues(std::vector<double> &values) {
   values.push_back(stat.request[0] + stat.request[1]);
   values.push_back(stat.iosize[0] + stat.iosize[1]);
   values.push_back(stat.busy[2]);
+  
+  if (pScheduler)
+    pScheduler->getStatValues(values);
 
   pICL->getStatValues(values);
 }
@@ -475,6 +508,9 @@ void HIL::getStatValues(std::vector<double> &values) {
 void HIL::resetStatValues() {
   memset(&stat, 0, sizeof(stat));
 
+  if (pScheduler)
+    pScheduler->resetStatValues();
+  
   pICL->resetStatValues();
 }
 
