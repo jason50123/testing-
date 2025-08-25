@@ -53,15 +53,28 @@ get_filename_component(GEM5_SRC_DIR "${PROJECT_SOURCE_DIR}/../../.." ABSOLUTE)
 get_filename_component(GEM5_ROOT    "${GEM5_SRC_DIR}/.." ABSOLUTE)
 
 # 允許用環境變數覆寫 ISA；預設用 ARM（因為你的 scons 正在 build/ARM）
+# ISA / VARIANT 由外部環境傳入（預設 ARM / opt）
 set(GEM5_ISA $ENV{GEM5_ISA})
 if (NOT GEM5_ISA)
   set(GEM5_ISA "ARM")
 endif ()
-set(GEM5_BUILD_DIR "${GEM5_ROOT}/build/${GEM5_ISA}")
+set(GEM5_VARIANT $ENV{GEM5_VARIANT})
+if (NOT GEM5_VARIANT)
+  set(GEM5_VARIANT "opt")
+endif ()
+set(GEM5_BUILD_DIR "${GEM5_ROOT}/build/${GEM5_ISA}/${GEM5_VARIANT}")
 
 message(STATUS "GEM5_ROOT      = ${GEM5_ROOT}")
 message(STATUS "GEM5_SRC_DIR   = ${GEM5_SRC_DIR}")
 message(STATUS "GEM5_BUILD_DIR = ${GEM5_BUILD_DIR}")
+
+# debug 標頭常見在 ${GEM5_BUILD_DIR}/debug
+include_directories(
+  ${GEM5_SRC_DIR}
+  ${GEM5_BUILD_DIR}
+  ${GEM5_BUILD_DIR}/config
+)
+
 
 # ── 把 gem5 的頭檔路徑加進來（src + build/<ISA> + build/<ISA>/config）──
 include_directories(
