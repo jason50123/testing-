@@ -140,10 +140,11 @@ void FTL::read(void *buf, size_t ofs, size_t sz _ADD_SIM_PARAMS) {
             simTick += 10;
             gScheduler->tick(simTick);
         }
+        // ★ 注意：走 gate 的路徑不要再扣一次
+    } else {
+        // 足額 → 當下即時扣除
+        gScheduler->useCreditISC(uid, pages);
     }
-
-    // 直接扣除credit（新設計中ISC任務實時扣除）
-    gScheduler->useCredit(uid, pages);
     
     pr("FTL::read | uid=%u | Credit charged: %lu pages, continue I/O | simTick=%lu",
        uid, pages, simTick);

@@ -44,10 +44,13 @@ class CreditScheduler : public Scheduler
         uint64_t   credit         = 0;        // 可用 token（page）
         double     carry          = 0.0;      // 小數餘量累積
         uint64_t   totalConsumed  = 0;
+        uint64_t   consumedHost   = 0;        // ★ 新增：host 類 I/O 消耗
+        uint64_t   consumedISC    = 0;        // ★ 新增：ISC 類 I/O 消耗
         bool       isActive       = false;
         uint64_t   lastRefillTick = 0;        // 上次補充時間（tick）
         uint32_t   idlePeriods    = 0;
         std::queue<Request> queue;
+        std::queue<Request> queueISC; 
     };
 
     static constexpr uint32_t IdleGracePeriods = 8; // 0 = 關閉寬限
@@ -66,6 +69,7 @@ class CreditScheduler : public Scheduler
     std::unordered_map<uint32_t, UserAccount> users;
 
     uint32_t        lastChosenUid = 0;
+    uint32_t        lastChosenUidISC  = 0; 
     bool            inTick        = false;
     bool            timerStarted  = false;
 
@@ -91,6 +95,18 @@ class CreditScheduler : public Scheduler
 
     // 工具
     UserAccount& getOrCreateUser(uint32_t uid);
+
+
+    // ---- 外部查詢/扣款 API （FTL/Namespace 會呼叫）----
+    bool pendingForUser(uint32_t uid) const override;
+    bool checkCredit(uint32_t uid, size_t need) const override;
+    void useCredit(uint32_t uid, size_t used) override;
+    void useCreditISC(uint32_t uid, size_t used) override;
+    // （選用）小工具：若你要在別處查詢/扣款
+    void     chargeUserCredit(uint32_t uid, uint64_t pages);
+    uint64_t getUserCredit(uint32_t uid) const;
+    uint64_t getUserWeight(uint32_t uid) const;
+    
 };
 
 }  // namespace HIL

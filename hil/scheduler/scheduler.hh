@@ -51,6 +51,7 @@ class Scheduler {
   virtual bool pendingForUser(uint32_t /*uid*/) const { return false; }
   virtual bool checkCredit(uint32_t /*uid*/, size_t /*needed*/) const { return true; }
   virtual void useCredit(uint32_t /*uid*/, size_t /*used*/) {}
+  virtual void useCreditISC(uint32_t /*uid*/, size_t /*used*/) {}
 };
 
 }  // namespace HIL

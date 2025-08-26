@@ -88,10 +88,22 @@ void CreditScheduler::submitRequest(Request& req)
                    "submit: -> adminQ size=%zu", adminQueue.size());
     } else {
         auto& acc = getOrCreateUser(req.userID);
-        acc.queue.push(req);
-        debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                   "submit: -> user[%u] Q size=%zu, credit=%" PRIu64,
-                   req.userID, acc.queue.size(), acc.credit);
+        const bool isGate = (req.op == OpType::CREDIT_ONLY || req.op == OpType::ISC_RESULT);
+
+        if (isGate) {
+            // ★ Gate 放到 ISC 佇列；若你想「插到最前端」，用重建 queue 的方式：
+            std::queue<Request> newQ;
+            newQ.push(req);
+            while (!acc.queueISC.empty()) { newQ.push(acc.queueISC.front()); acc.queueISC.pop(); }
+            acc.queueISC.swap(newQ);
+            debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                       "submit: -> user[%u].ISC size=%zu", req.userID, acc.queueISC.size());
+        } else {
+            acc.queue.push(req);
+            debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                       "submit: -> user[%u] Q size=%zu, credit=%" PRIu64,
+                       req.userID, acc.queue.size(), acc.credit);
+        }
 
         if (!acc.isActive) {
             acc.isActive       = true;
@@ -208,45 +220,50 @@ void CreditScheduler::tick(Tick now)
         const size_t MAX_DISPATCH_PER_TICK = 4096; // 安全上限，避免無窮迴圈
         size_t rounds = 0;
 
-        for (; rounds < MAX_DISPATCH_PER_TICK; ++rounds) {
-            bool dispatched = false;
-
-            // 起點：永遠從 lastChosenUid 的下一位
-            auto it = users.find(lastChosenUid);
+        auto try_dispatch_class = [&](bool isc)->bool {
+            uint32_t &last = isc ? lastChosenUidISC : lastChosenUid;
+            auto it = users.find(last);
             if (it == users.end() || ++it == users.end()) it = users.begin();
 
             size_t visited = 0;
             while (visited++ < users.size()) {
                 if (it == users.end()) it = users.begin();
                 UserAccount &acc = it->second;
-                if (!acc.queue.empty()) {
-                    const Request& front = acc.queue.front();
-                    uint64_t need = (front.length + PageSz - 1) / PageSz;  // 向上取整頁數
-
+                auto &Q = isc ? acc.queueISC : acc.queue;
+                if (!Q.empty()) {
+                    const Request& front = Q.front();
+                    uint64_t need = (front.length + PageSz - 1) / PageSz;
                     if (acc.credit >= need) {
-                        acc.credit -= need;
+                        acc.credit        -= need;
                         acc.totalConsumed += need;
-                        lastChosenUid = it->first;
-
-                        dispatchICL(front, now);
-                        acc.queue.pop();
+                        if (isc) acc.consumedISC += need; else acc.consumedHost += need; // ★ 累加分流
+                        last               = it->first;
+                        if (!isc) dispatchICL(front, now); // ISC gate 不下 I/O
+                        Q.pop();
                         debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                                   "dispatch: uid=%u need=%" PRIu64 " credit-left=%" PRIu64
+                                   "dispatch[%s]: uid=%u need=%" PRIu64 " credit-left=%" PRIu64
                                    " totalConsumed=%" PRIu64 " Qsize=%zu",
-                                   (unsigned)lastChosenUid, need, acc.credit,
-                                   acc.totalConsumed, acc.queue.size());
-                        dispatched = true;
-                        break; // 本輪派發 1 筆就跳出，回到最外層 for 再開始下一輪
+                                   isc ? "ISC" : "HOST",
+                                   (unsigned)last, need, acc.credit, acc.totalConsumed, Q.size());
+                        return true;
                     } else {
                         debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                                   "skip: uid=%u need=%" PRIu64 " credit=%" PRIu64 " (不足)",
-                                   (unsigned)it->first, need, acc.credit);
+                                   "skip[%s]: uid=%u need=%" PRIu64 " credit=%" PRIu64 " (不足)",
+                                   isc ? "ISC" : "HOST", (unsigned)it->first, need, acc.credit);
                     }
                 }
                 ++it;
             }
+            return false;
+        };
 
-            if (!dispatched) break; // 當前無人可派發，結束
+
+        for (; rounds < MAX_DISPATCH_PER_TICK; ++rounds) {
+            bool dispatched = false;
+            // ★ 策略位：若要 normal-first，調換呼叫順序即可
+            dispatched = try_dispatch_class(/*isc=*/true)
+                      || try_dispatch_class(/*isc=*/false);
+            if (!dispatched) break;
         }
     }
 
@@ -312,7 +329,25 @@ void CreditScheduler::getStatList(std::vector<Stats> &list, std::string prefix) 
     s.desc = "Per-user credit consumed (pages)";
     list.push_back(s);
   }
-  
+  // (2.5) 類別總體統計（Host / ISC）
+  s.name = prefix + "credit.host.total.consumed";
+  s.desc = "Total HOST-class credit consumed (pages)";
+  list.push_back(s);
+  s.name = prefix + "credit.isc.total.consumed";
+  s.desc = "Total ISC-class credit consumed (pages)";
+  list.push_back(s);
+
+  // (2.6) 每 user 類別消耗（Host / ISC）
+  for (uint32_t uid : statUsers_) {
+    s.name = prefix + "credit.user.uid" + std::to_string(uid) + ".consumed.host";
+    s.desc = "Per-user HOST-class credit consumed (pages)";
+    list.push_back(s);
+  }
+  for (uint32_t uid : statUsers_) {
+    s.name = prefix + "credit.user.uid" + std::to_string(uid) + ".consumed.isc";
+    s.desc = "Per-user ISC-class credit consumed (pages)";
+    list.push_back(s);
+  }
   // (3) 每 user 隊列中的請求數量
   for (uint32_t uid : statUsers_) {
     s.name = prefix + "credit.user.uid" + std::to_string(uid) + ".queue_size";
@@ -333,8 +368,13 @@ void CreditScheduler::getStatList(std::vector<Stats> &list, std::string prefix) 
 void CreditScheduler::getStatValues(std::vector<double>& val) {
     // (1) 總消耗
     uint64_t consumed_total = 0;
-    for (auto const& kv : users)
-        consumed_total += kv.second.totalConsumed;
+    uint64_t consumed_host_total = 0;
+    uint64_t consumed_isc_total  = 0;
+    for (auto const& kv : users){
+        consumed_total      += kv.second.totalConsumed;
+        consumed_host_total += kv.second.consumedHost;
+        consumed_isc_total  += kv.second.consumedISC;
+    }
     val.push_back(static_cast<double>(consumed_total));
 
     // (2) 每 user 消耗（若該 user 尚未建立，值為 0）
@@ -343,23 +383,41 @@ void CreditScheduler::getStatValues(std::vector<double>& val) {
         double v = (it == users.end()) ? 0.0 : static_cast<double>(it->second.totalConsumed);
         val.push_back(v);
     }
-    
-    // (3) 每 user 隊列中的請求數量
+    // (2.5) 類別總體統計（Host / ISC）
+    val.push_back(static_cast<double>(consumed_host_total));
+    val.push_back(static_cast<double>(consumed_isc_total));
+
+    // (2.6) 每 user 類別消耗
     for (uint32_t uid : statUsers_) {
         auto it = users.find(uid);
-        double queueSize = (it == users.end()) ? 0.0 : static_cast<double>(it->second.queue.size());
+        double hostv = (it == users.end()) ? 0.0 : static_cast<double>(it->second.consumedHost);
+        val.push_back(hostv);
+    }
+    for (uint32_t uid : statUsers_) {
+        auto it = users.find(uid);
+        double iscv = (it == users.end()) ? 0.0 : static_cast<double>(it->second.consumedISC);
+        val.push_back(iscv);
+    }
+     
+    // (3) 每 user 隊列中的請求數量（Host + ISC 總和）
+    for (uint32_t uid : statUsers_) {
+        auto it = users.find(uid);
+        double queueSize = 0.0;
+        if (it != users.end()) queueSize = static_cast<double>(it->second.queue.size() + it->second.queueISC.size());
         val.push_back(queueSize);
     }
 
-    // (4) 掃描 queue，估算 pending / ready
+    // (4) 掃描所有 queue（含 ISC），估算 pending / ready
     uint64_t pending = 0;
     uint64_t ready   = adminQueue.size();     // admin I/O 視為 ready
     for (auto const& kv : users) {
         const auto& acc = kv.second;
-        if (acc.queue.empty()) continue;
-        std::queue<Request> tmpQ = acc.queue;
+        if (acc.queue.empty() && acc.queueISC.empty()) continue;
+        std::queue<Request> tmpA = acc.queueISC; // 先估 ISC
+        std::queue<Request> tmpB = acc.queue;    // 再估 Host
         uint64_t creditLeft = acc.credit;
-        while (!tmpQ.empty()) {
+        auto consume = [&](std::queue<Request>& tmpQ)->bool{
+          while (!tmpQ.empty()) {
             const Request& rq = tmpQ.front();
             uint64_t need = (rq.length + PageSz - 1) / PageSz;
             if (creditLeft >= need) {
@@ -368,9 +426,14 @@ void CreditScheduler::getStatValues(std::vector<double>& val) {
                 tmpQ.pop();
             } else {
                 pending += tmpQ.size();   // 剩餘全部視為欠 token
-                break;
+                return false;
             }
-        }
+          }
+          return true;
+        };
+        if (!consume(tmpA)) continue;
+            consume(tmpB);
+
     }
     val.push_back(static_cast<double>(pending));
     val.push_back(static_cast<double>(ready));
@@ -383,14 +446,62 @@ void CreditScheduler::resetStatValues() {
         acc.credit         = 0;
         acc.carry          = 0.0;
         acc.totalConsumed  = 0;
+        acc.consumedHost   = 0;
+        acc.consumedISC    = 0;
         acc.isActive       = false;
         acc.lastRefillTick = SimpleSSD::getTick();
-        while (!acc.queue.empty()) acc.queue.pop();
+        while (!acc.queueISC.empty()) acc.queueISC.pop();
     }
     while (!adminQueue.empty()) adminQueue.pop();
     lastChosenUid = 0;
     // 相位重置：下次啟動時再設定
     lastGlobalRefillTick_ = 0;
 }
+
+// ========= 外部查詢/扣款 API =========
+
+bool CreditScheduler::pendingForUser(uint32_t uid) const {
+    auto it = users.find(uid);
+    if (it == users.end()) return false;
+    return !it->second.queueISC.empty();  // 只看 ISC gate 佇列
+}
+
+bool CreditScheduler::checkCredit(uint32_t uid, size_t need) const {
+    auto it = users.find(uid);
+    if (it == users.end()) return false;       // 新用戶尚未拿到 token
+    return it->second.credit >= need;
+}
+
+void CreditScheduler::useCredit(uint32_t uid, size_t used) {
+    auto &acc = const_cast<CreditScheduler*>(this)->getOrCreateUser(uid);
+    uint64_t take = (used > acc.credit) ? acc.credit : used;
+    acc.credit        -= take;
+    acc.totalConsumed += take;
+}
+
+void CreditScheduler::useCreditISC(uint32_t uid, size_t used) {
+    auto &acc = const_cast<CreditScheduler*>(this)->getOrCreateUser(uid);
+    uint64_t take = (used > acc.credit) ? acc.credit : used;
+    acc.credit        -= take;
+    acc.totalConsumed += take;
+    acc.consumedISC   += take;   // ★ 把 FTL 端直接扣款歸到 ISC
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "charge[ISC]: uid=%u used=%" PRIu64 " credit-left=%" PRIu64
+               " consumedISC=%" PRIu64 " totalConsumed=%" PRIu64,
+               uid, (uint64_t)used, acc.credit, acc.consumedISC, acc.totalConsumed);
+}
+
+// （選用）小工具
+void CreditScheduler::chargeUserCredit(uint32_t uid, uint64_t pages) { useCredit(uid, pages); }
+uint64_t CreditScheduler::getUserCredit(uint32_t uid) const {
+    auto it = users.find(uid);
+    return (it == users.end()) ? 0 : it->second.credit;
+}
+uint64_t CreditScheduler::getUserWeight(uint32_t uid) const {
+    auto it = users.find(uid);
+    return (it == users.end()) ? 1 : it->second.weight;
+}
+
+
 
 }} // namespace SimpleSSD::HIL
