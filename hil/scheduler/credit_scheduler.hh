@@ -90,8 +90,8 @@ class CreditScheduler : public Scheduler
 
     // ------------------------------------------------------------
     // 核心流程
-    void tick(Tick now);                 // 補 token + RR 發 I/O
-    void dispatchICL(const Request& req, Tick tickNow);
+    void tick(Tick &now);                 // 補 token + RR 發 I/O
+    void dispatchICL(const Request& req, Tick &tickNow);
 
     // 工具
     UserAccount& getOrCreateUser(uint32_t uid);

@@ -125,8 +125,6 @@ void CreditScheduler::submitRequest(Request& req)
         }
     }
 
-    // 立即嘗試在當前 tick 做「到期則補、再派發」
-    tick(SimpleSSD::getTick());
 }
 
 // ------------ processEvent --------------------------------------------------
@@ -138,7 +136,7 @@ void CreditScheduler::processEvent(uint64_t now)
 }
 
 // ------------ tick()  -------------------------------------------------------
-void CreditScheduler::tick(Tick now)
+void CreditScheduler::tick(Tick &now)
 {
     if (inTick) return;
     inTick = true;
@@ -271,7 +269,7 @@ void CreditScheduler::tick(Tick now)
 }
 
 // ------------ dispatch 到 ICL ----------------------------------------------
-void CreditScheduler::dispatchICL(const Request& req, Tick t)
+void CreditScheduler::dispatchICL(const Request& req, Tick &t)
 {
     // ICL::Request 需要「非 const 參考」：建立可變副本避免 const 轉換錯誤
     Request req_mut = req;
