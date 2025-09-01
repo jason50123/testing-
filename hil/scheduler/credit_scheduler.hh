@@ -8,6 +8,8 @@
 #include <queue>
 #include <vector>
 #include <cstdint>
+#include <cstddef>
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "sim/core.hh"
@@ -29,11 +31,29 @@ class CreditScheduler : public Scheduler
     // 對外唯一 API
     void submitRequest(Request& req) override;     // HIL 呼叫
     void processEvent(uint64_t now);               // 週期事件回呼（由建構子排好）
- 
+
+    // ★ 覆寫 base 介面（by-ref tick + 同步處理）
+    void tick(uint64_t &now) override;
+    void processUntil(Request &req, uint64_t &now) override;
+    
     /* --- 統計介面 --- */
     void getStatList (std::vector<Stats>& list, std::string prefix) override;
     void getStatValues(std::vector<double>& val) override;
     void resetStatValues() override;
+
+    // ---- 供上層（例如 NVMe::Namespace）登記「等 credit 再執行」的 ISC 工作 ----
+    //   - uid:   使用者
+    //   - pages: 需要扣的頁數
+    //   - ctx:   上層回呼要用的 context（例如 IOContext* 包在你自己的小結構內）
+    //   - cb:    扣到 credit 後要呼叫的函式；原型：void (*cb)(void* ctx, uint64_t now)
+    // 注意：Scheduler 只會幫你「等到夠、扣款、呼叫 cb」，不認 context 型別
+    void submitISCDeferred(uint32_t uid, uint64_t pages, void* ctx,
+                           void (*cb)(void* /*ctx*/, uint64_t /*now*/));
+
+
+    // 新增：嘗試以使用者 credit 派發一筆請求；若不足，將請求移至延遲佇列。
+    // 回傳 true 表示已完成扣款、可立刻派發；false 表示已被延遲。
+    bool tryDispatchWithCredit(Request& req, Tick& now);
 
   private:
     // ------------------------------------------------------------
@@ -49,6 +69,7 @@ class CreditScheduler : public Scheduler
         bool       isActive       = false;
         uint64_t   lastRefillTick = 0;        // 上次補充時間（tick）
         uint32_t   idlePeriods    = 0;
+        uint64_t pendingGates = 0; 
         std::queue<Request> queue;
         std::queue<Request> queueISC; 
     };
@@ -88,9 +109,33 @@ class CreditScheduler : public Scheduler
     // —— 新增：全域上次補發時間（節流，只在到期補發）——
     uint64_t         lastGlobalRefillTick_ = 0;
 
+
+    // ---- 一般請求的延遲佇列（Host/ISC 的 Request 直接排入等待扣款）----
+    struct DeferredRequest {
+        Request   req;
+        uint64_t  pages;
+        uint64_t  deferTime;
+    };
+    std::queue<DeferredRequest> deferredQueue;
+
+
+    // ---- 自訂 ISC 延遲工作（回呼）----
+    struct DeferredCustom {
+        uint32_t uid = 0;
+        uint64_t pages = 0;
+        uint64_t deferTime = 0;
+        void*    ctx = nullptr;
+        void   (*resume)(void*, uint64_t) = nullptr;
+    };
+    std::queue<DeferredCustom> deferredISC_;
+
+
+    // ★ 新增：完成查詢表（reqID -> finishedTick）
+    std::unordered_map<uint64_t, uint64_t> completedAt_;
+
     // ------------------------------------------------------------
     // 核心流程
-    void tick(Tick &now);                 // 補 token + RR 發 I/O
+    void tickImpl(Tick &now);                // 私有版：實做補 token + RR + I/O
     void dispatchICL(const Request& req, Tick &tickNow);
 
     // 工具

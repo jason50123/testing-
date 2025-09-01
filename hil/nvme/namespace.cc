@@ -18,7 +18,7 @@
  */
 
 #include "hil/nvme/namespace.hh"
-
+#include "hil/scheduler/credit_scheduler.hh"
 #include "hil/nvme/subsystem.hh"
 #include "util/algorithm.hh"
 
@@ -532,63 +532,6 @@ void Namespace::read(SQEntryWrapper &req, RequestFunction &func) {
   }
 }
 
-void Namespace::kickPendingISC()
-{
-    size_t qsz = pendingISC.size();
-    while (qsz--) {
-        IOContext *ctx = pendingISC.front();
-        pendingISC.pop();
-        pr("PENDING_POP  uid=%u  left=%zu  tick=%lu",
-           ctx->uid, pendingISC.size(), getTick());
-        uint64_t tick = getTick();          //get current tick
-        size_t szRes  = *(size_t*)ISC::Runtime::getOpt(
-                            ISC_SUBCMD_OPT(ctx->slba),
-                            ISC_KEY_RESULT_SIZE, tick, nullptr);
-        uint64_t pages = (szRes + PAGE_SIZE - 1) / PAGE_SIZE;
-
-        /* check credit again */
-        if (gScheduler && !gScheduler->checkCredit(ctx->uid, pages)) {
-            /* still not enough */
-            if (!evKickISC)
-              evKickISC = allocate([this](uint64_t){ kickPendingISC(); });
-            schedule(evKickISC, tick + 50);
-            pendingISC.push(ctx);
-            continue;
-        }
-
-        /* enough token -> goto isc flow and replay*/
-        if (gScheduler) {
-            Request credReq{};
-            credReq.userID = ctx->uid;
-            credReq.length = pages*PAGE_SIZE;
-            credReq.op     = OpType::ISC_RESULT;
-            gScheduler->submitRequest(credReq);
-            gScheduler->tick(tick);
-        }
-
-        /* write dma again ((default flow)) */
-        auto id   = ISC_SUBCMD_OPT(ctx->slba);
-        auto res  = ISC::Runtime::getOpt(id, ISC_KEY_RESULT, tick, nullptr);
-        size_t cp = MIN(ctx->nlb*info.lbaSize, szRes);
-        memcpy(ctx->buffer, res, cp);
-
-        auto done = [this](uint64_t t, void *c){
-            (void)t ;
-            IOContext *p = (IOContext*)c;
-            p->beginAt++;
-            if (p->beginAt == 2) {
-                p->function(p->resp);
-                if (p->buffer) free(p->buffer);
-                delete p->dma;
-                delete p;
-            }
-        };
-        DMAFunction cb = done;
-        ctx->dma->write(0, ctx->nlb*info.lbaSize, ctx->buffer,
-                        cb, ctx);
-    }
-}
-
 void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
   bool noDMA = false;
 
@@ -658,42 +601,69 @@ void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
       if (ISC_SUBCMD_IS(pContext->slba, ISC_SUBCMD_SLET_RES)) {
         pr("Runtime getRes         -----------ch------------------------------");
         auto id = ISC_SUBCMD_OPT(pContext->slba);
-        auto res = ISC::Runtime::getOpt(id, ISC_KEY_RESULT, tick, nullptr);
         auto psz = ISC::Runtime::getOpt(id, ISC_KEY_RESULT_SIZE, tick, nullptr);
         auto rsz = MIN(pContext->nlb * info.lbaSize, *(size_t *)psz);
 
         //Calculate page size and send to scheduler 
-        uint64_t pages = (rsz + PAGE_SIZE - 1) / PAGE_SIZE;
 
-        bool granted = true;
+        const uint64_t pages = (rsz + PAGE_SIZE - 1) / PAGE_SIZE;
+        // 只在 CreditScheduler 啟用時做 credit gate
         if (gScheduler) {
-          if (!gScheduler->checkCredit(pContext->uid, pages)) {
-            granted = false;
-            pendingISC.push(pContext);
-            pr("PENDING_PUSH uid=%u need=%lu pages  pending_len=%zu  tick=%lu",
-            pContext->uid, pages, pendingISC.size(), tick);
-            if (!evKickISC)
-              evKickISC = allocate([this](uint64_t){ kickPendingISC(); });
-            schedule(evKickISC, tick + 50);
-            return;
-            debugprint(LOG_HIL_NVME,
-              "WAIT_TOKEN | uid=%u need=%lu pages (queue)", pContext->uid, pages);
-          } else {
-            Request credReq{};
-            credReq.userID = pContext->uid;
-            credReq.length = pages*PAGE_SIZE;
-            credReq.op     = OpType::ISC_RESULT;
-            gScheduler->submitRequest(credReq);
-            gScheduler->tick(tick);
-            debugprint(LOG_HIL_NVME,
-              "TOKEN_OK   | uid=%u consume=%lu pages", pContext->uid, pages);
+          auto *cs = dynamic_cast<SimpleSSD::HIL::CreditScheduler*>(gScheduler);
+          if (cs) {
+            if (!gScheduler->checkCredit(pContext->uid, pages)) {
+              // ---- 信用不足：委託 Scheduler 等夠再呼叫回來 ----
+              struct ISCResumeCtx { Namespace* ns; IOContext* ctx; };
+              auto *rc = new ISCResumeCtx{ this, pContext };
+              // 回呼：扣到 credit 後，搬結果 + DMA 寫回並讓 dmaDone 收尾
+              auto resumeThunk = [](void* vp, uint64_t now) {
+                  auto *rc = static_cast<ISCResumeCtx*>(vp);
+                  Namespace *ns = rc->ns;
+                  IOContext *p = rc->ctx;
+                  // 重新計算尺寸（以現在 tick 取值）
+                  auto id2  = ISC_SUBCMD_OPT(p->slba);
+                  auto psz2 = ISC::Runtime::getOpt(id2, ISC_KEY_RESULT_SIZE, now, nullptr);
+                  auto rsz2 = MIN(p->nlb * ns->info.lbaSize, *(size_t *)psz2);
+                  auto res2 = ISC::Runtime::getOpt(id2, ISC_KEY_RESULT, now, nullptr);
+                  if (!p->buffer)
+                      p->buffer = (uint8_t*)calloc(p->nlb, ns->info.lbaSize);
+                  memcpy(p->buffer, res2, rsz2);
+                  // 排一筆 DMA，完成後由 dmaDone 釋放 pContext
+                  DMAFunction dmaDone2 = [ns](uint64_t t, void *context) {
+                      IOContext *pc = (IOContext *)context;
+                      pc->beginAt++;
+                      if (pc->beginAt == 2) {
+                          debugprint(LOG_HIL_NVME,
+                              "NVM     | ISC-GET  | CQ %u | SQ %u:%u | CID %u | NSID %-5d | "
+                              "%" PRIX64 " + %d | %" PRIu64 " - %" PRIu64 " (%" PRIu64 ")",
+                              pc->resp.cqID, pc->resp.entry.dword2.sqID,
+                              pc->resp.sqUID, pc->resp.entry.dword3.commandID, ns->nsid,
+                              pc->slba, pc->nlb, pc->tick, t, t - pc->tick);
+                          pc->function(pc->resp);
+                          if (pc->buffer) free(pc->buffer);
+                          delete pc->dma;
+                          delete pc;
+                      }
+                  };
+                  p->dma->write(0, p->nlb * ns->info.lbaSize, p->buffer, dmaDone2, p);
+                  delete rc;
+              };
+              cs->submitISCDeferred(pContext->uid, pages, rc, resumeThunk);
+              // 這筆 isc-get 先不完成，等待回呼做 DMA 並收尾
+              return;
+            } else {
+              // 信用足：立刻扣款 → 繼續完成本次 DMA
+              gScheduler->useCreditISC(pContext->uid, pages);
+            }
           }
         }
-        if (!granted) return;
-
-        memcpy(pContext->buffer, res, rsz);
-        pr("result/buffer size: %lu/%lu", *(size_t *)psz,
-           pContext->nlb * info.lbaSize);
+        // 走到這裡表示：不是 CreditScheduler 或已扣款 → 直接搬結果與 DMA
+        {
+          auto res = ISC::Runtime::getOpt(id, ISC_KEY_RESULT, tick, nullptr);
+          memcpy(pContext->buffer, res, rsz);
+          pr("result/buffer size: %lu/%lu", *(size_t *)psz,
+             pContext->nlb * info.lbaSize);
+        }
 
         pr("getRes done            -----------------------------------------");
       }

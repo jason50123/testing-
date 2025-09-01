@@ -92,26 +92,25 @@ void HIL::read(Request &req) {
     uint64_t tick = beginAt;
 
     pReq->reqID = ++reqCount;
-    pReq->op    = OpType::READ; 
+    pReq->op    = OpType::READ;
 
     debugprint(LOG_HIL,
                "READ  | REQ %7u | LCA %" PRIu64 " + %" PRIu64 " | BYTE %" PRIu64
                " + %" PRIu64,
                pReq->reqID, pReq->range.slpn, pReq->range.nlp, pReq->offset,
                pReq->length);
-      
-    pr("HIL | Submitting read request to scheduler");
-    pScheduler->submitRequest(*pReq);
-    pScheduler->tick(tick);
-    pr("HIL | Read request submitted to scheduler");
+
+    // ★ 讓排程器「同步」處理到這筆 req 完成，tick 會在內部被 ICL 更新為完成時間
+    pScheduler->processUntil(*pReq, tick);
+
+    // 統計 & 完成回報
     stat.request[0]++;
     stat.iosize[0] += pReq->length;
-    updateBusyTime(0, beginAt, tick);
-    updateBusyTime(2, beginAt, tick);
+    updateBusyTime(0, beginAt, tick);   // HIL busy
+    updateBusyTime(2, beginAt, tick);   // Device busy (依原框架)
 
     pReq->finishedAt = tick;
     completionQueue.push(*pReq);
-
     updateCompletion();
 
     delete pReq;
@@ -119,7 +118,6 @@ void HIL::read(Request &req) {
 
   execute(CPU::HIL, CPU::READ, doRead, new Request(req));
 }
-
 
 void HIL::switchScheduler(SchedulerType type) {
   if (type == currentSchedulerType) {
@@ -289,7 +287,7 @@ void HIL::write(Request &req) {
     uint64_t tick = beginAt;
 
     pReq->reqID = ++reqCount;
-    pReq->op = OpType::WRITE;
+    pReq->op    = OpType::WRITE;
 
     debugprint(LOG_HIL,
                "WRITE | REQ %7u | LCA %" PRIu64 " + %" PRIu64 " | BYTE %" PRIu64
@@ -297,12 +295,10 @@ void HIL::write(Request &req) {
                pReq->reqID, pReq->range.slpn, pReq->range.nlp, pReq->offset,
                pReq->length);
 
-    pr("HIL | Submitting write request to scheduler");
-    pScheduler->submitRequest(*pReq);
-    pScheduler->tick(tick);
-    pr("HIL | Write request submitted to scheduler");
+    // ★ 同步等到完成
+    pScheduler->processUntil(*pReq, tick);
 
-
+    // 統計 & 完成回報
     stat.request[1]++;
     stat.iosize[1] += pReq->length;
     updateBusyTime(1, beginAt, tick);
@@ -310,7 +306,6 @@ void HIL::write(Request &req) {
 
     pReq->finishedAt = tick;
     completionQueue.push(*pReq);
-
     updateCompletion();
 
     delete pReq;

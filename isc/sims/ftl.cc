@@ -109,56 +109,12 @@ void FTL::read(void *buf, size_t ofs, size_t sz _ADD_SIM_PARAMS) {
     return;
   };
 
-#ifndef ISC_TEST
-  /* ---------- NEW Credit Scheduler Flow Control ---------- */
-
-  uint32_t uid = 0;
-   
-  if (simCtx)
-    uid = ((HIL::Request *)simCtx)->userID;
-
-  if (gScheduler) {
-    pr("FTL::read() NEW Credit Scheduler branch entered");
-    uint64_t pages = (sz + PAGE_SIZE - 1) / PAGE_SIZE;
-    pr("FTL::read | uid=%u | I/O=%lu B (%lu pages) | simTick=%lu",
-       uid, sz, pages, simTick);
-
-    // 檢查用戶是否有足夠的credit
-    if (!gScheduler->checkCredit(uid, pages)) {
-        pr("FTL::read | uid=%u | Insufficient credit, submitting credit-only request", uid);
-        
-        HIL::Request credReq{};
-        credReq.userID = uid;
-        credReq.prio   = 0;
-        credReq.length = pages * PAGE_SIZE;
-        credReq.op     = HIL::OpType::CREDIT_ONLY;
-
-        gScheduler->submitRequest(credReq);
-        
-        // 等待直到用戶不在pending queue
-        while (gScheduler->pendingForUser(uid)) {
-            simTick += 10;
-            gScheduler->tick(simTick);
-        }
-        // ★ 注意：走 gate 的路徑不要再扣一次
-    } else {
-        // 足額 → 當下即時扣除
-        gScheduler->useCreditISC(uid, pages);
-    }
-    
-    pr("FTL::read | uid=%u | Credit charged: %lu pages, continue I/O | simTick=%lu",
-       uid, pages, simTick);
-  }
-
-#endif /* !ISC_TEST */
-
   /* ---------- SimpleSSD Fast Path  ---------- */
 
 #ifndef ISC_TEST
   auto hReq = *(HIL::Request *)simCtx;
   auto ns = (HIL::NVMe::Namespace *)hReq.ns;
-  
-  hReq.userID = uid;  
+    
   size_t slba = ofs / FTL::lbaSize;
   size_t nlblk = (sz + FTL::lbaSize - 1) / FTL::lbaSize;
   ns->pParent->convertUnit(ns, slba, nlblk, hReq);
