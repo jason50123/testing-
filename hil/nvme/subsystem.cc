@@ -1437,6 +1437,13 @@ void Subsystem::resetStatValues() {
   pHIL->resetStatValues();
 }
 
+bool Subsystem::canServe(uint32_t uid) const {
+  // Query HIL layer to check if user has available credit
+  bool result = pHIL->canServe(uid);
+  debugprint(LOG_HIL_NVME, "SUBSYS_CANSERVE | uid=%u -> %s", uid, result ? "ALLOW" : "REJECT");
+  return result;
+}
+
 }  // namespace NVMe
 
 }  // namespace HIL

@@ -16,16 +16,13 @@
  * You should have received a copy of the GNU General Public License
  * along with SimpleSSD.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 #include "util/def.hh"
-
 #include <cstdlib>
 #include <iostream>
 
 namespace SimpleSSD {
 
 LPNRange::_LPNRange() : slpn(0), nlp(0) {}
-
 LPNRange::_LPNRange(uint64_t s, uint64_t n) : slpn(s), nlp(n) {}
 
 namespace HIL {
@@ -38,8 +35,15 @@ Request::_Request()
       userID(0),
       prio(0),
       op(OpType::READ),
+      ns(nullptr),                           // 加入 ns 初始化
       finishedAt(0),
-      context(nullptr) {}
+      function(nullptr),                     // 加入 function 初始化
+      context(nullptr),
+      state(RequestState::NORMAL),           // 新增欄位初始化
+      creditNeeded(0),                       // 新增欄位初始化
+      deferTime(0),                          // 新增欄位初始化
+      originalFunction(nullptr),             // 新增欄位初始化
+      originalContext(nullptr) {}            // 新增欄位初始化
 
 Request::_Request(DMAFunction &f, void *c)
     : reqID(0),
@@ -49,9 +53,15 @@ Request::_Request(DMAFunction &f, void *c)
       userID(0), 
       prio(0),
       op(OpType::READ),
+      ns(nullptr),                           // 加入 ns 初始化
       finishedAt(0),
       function(f),
-      context(c) {}
+      context(c),
+      state(RequestState::NORMAL),           // 新增欄位初始化
+      creditNeeded(0),                       // 新增欄位初始化
+      deferTime(0),                          // 新增欄位初始化
+      originalFunction(nullptr),             // 新增欄位初始化
+      originalContext(nullptr) {}            // 新增欄位初始化
 
 bool Request::operator()(const Request &a, const Request &b) {
   return a.finishedAt > b.finishedAt;
@@ -61,7 +71,13 @@ bool Request::operator()(const Request &a, const Request &b) {
 
 namespace ICL {
 
-Request::_Request() : reqID(0), reqSubID(0), offset(0), length(0) {}
+Request::_Request() 
+    : reqID(0), 
+      reqSubID(0), 
+      offset(0), 
+      length(0),
+      userID(0),
+      prio(0) {}    // 移除 state 初始化
 
 Request::_Request(HIL::Request &r)
     : reqID(r.reqID),
@@ -70,7 +86,7 @@ Request::_Request(HIL::Request &r)
       length(r.length),
       range(r.range),
       userID(r.userID),
-      prio(r.prio) {}
+      prio(r.prio) {}  // 不複製 state
 
 }  // namespace ICL
 

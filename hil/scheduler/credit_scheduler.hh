@@ -10,10 +10,7 @@
 #include <cstdint>
 #include <cstddef>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include "sim/core.hh"
-#pragma GCC diagnostic pop
+// Removed gem5 sim/core.hh dependency - using SimpleSSD event system instead
 
 namespace SimpleSSD {
 namespace HIL {
@@ -31,11 +28,8 @@ class CreditScheduler : public Scheduler
     // 對外唯一 API
     void submitRequest(Request& req) override;     // HIL 呼叫
     void processEvent(uint64_t now);               // 週期事件回呼（由建構子排好）
-
-    // ★ 覆寫 base 介面（by-ref tick + 同步處理）
-    void tick(uint64_t &now) override;
-    void processUntil(Request &req, uint64_t &now) override;
-    
+    void processUntil(Request& req, uint64_t& completionTick);  // 同步處理直到完成
+ 
     /* --- 統計介面 --- */
     void getStatList (std::vector<Stats>& list, std::string prefix) override;
     void getStatValues(std::vector<double>& val) override;
@@ -54,6 +48,17 @@ class CreditScheduler : public Scheduler
     // 新增：嘗試以使用者 credit 派發一筆請求；若不足，將請求移至延遲佇列。
     // 回傳 true 表示已完成扣款、可立刻派發；false 表示已被延遲。
     bool tryDispatchWithCredit(Request& req, Tick& now);
+    
+    // ---- 外部查詢/扣款 API （Controller會呼叫）----
+    bool pendingForUser(uint32_t uid) const override;
+    bool checkCredit(uint32_t uid, size_t need) const override;
+    void useCredit(uint32_t uid, size_t used) override;
+    void useCreditISC(uint32_t uid, size_t used) override;
+    
+    // （選用）小工具：若你要在別處查詢/扣款
+    void     chargeUserCredit(uint32_t uid, uint64_t pages);
+    uint64_t getUserCredit(uint32_t uid) const;
+    uint64_t getUserWeight(uint32_t uid) const;
 
   private:
     // ------------------------------------------------------------
@@ -74,7 +79,7 @@ class CreditScheduler : public Scheduler
         std::queue<Request> queueISC; 
     };
 
-    static constexpr uint32_t IdleGracePeriods = 8; // 0 = 關閉寬限
+    static constexpr uint32_t IdleGracePeriods = 100; // 增加寬限期以保持用戶在IO間隔期間active
     
     // ------------------------------------------------------------
     // 常數
@@ -129,28 +134,15 @@ class CreditScheduler : public Scheduler
     };
     std::queue<DeferredCustom> deferredISC_;
 
-
-    // ★ 新增：完成查詢表（reqID -> finishedTick）
-    std::unordered_map<uint64_t, uint64_t> completedAt_;
-
     // ------------------------------------------------------------
     // 核心流程
-    void tickImpl(Tick &now);                // 私有版：實做補 token + RR + I/O
+    void tick(Tick &now);                 // 補 token + RR 發 I/O
     void dispatchICL(const Request& req, Tick &tickNow);
 
     // 工具
     UserAccount& getOrCreateUser(uint32_t uid);
 
 
-    // ---- 外部查詢/扣款 API （FTL/Namespace 會呼叫）----
-    bool pendingForUser(uint32_t uid) const override;
-    bool checkCredit(uint32_t uid, size_t need) const override;
-    void useCredit(uint32_t uid, size_t used) override;
-    void useCreditISC(uint32_t uid, size_t used) override;
-    // （選用）小工具：若你要在別處查詢/扣款
-    void     chargeUserCredit(uint32_t uid, uint64_t pages);
-    uint64_t getUserCredit(uint32_t uid) const;
-    uint64_t getUserWeight(uint32_t uid) const;
     
 };
 

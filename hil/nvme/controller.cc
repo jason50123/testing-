@@ -116,6 +116,9 @@ Controller::Controller(Interface *intrface, ConfigReader &c)
   maxRequest = conf.readUint(CONFIG_NVME, NVME_MAX_REQUEST_COUNT);
   workInterval = conf.readUint(CONFIG_NVME, NVME_WORK_INTERVAL);
   requestInterval = workInterval / maxRequest;
+  
+  // Initialize per-user virtual queue system
+  lastUid = 0;
 
   // Which subsystem should we use
   uint16_t vid, ssvid;
@@ -616,6 +619,9 @@ int Controller::deleteSQueue(uint16_t sqid) {
     ppSQueue[sqid] = NULL;
 
     debugprint(LOG_HIL_NVME, "SQ %-5d| DELETE", sqid);
+    
+    // Clean up per-user queues and mappings for this SQ
+    purgeSQFromUserQueues(sqid);
   }
   else {
     ret = 1;  // Invalid Queue ID
@@ -1541,6 +1547,8 @@ void Controller::collectSQueue(DMAFunction &func, void *context) {
 }
 
 void Controller::work() {
+  // debugprint(LOG_HIL_NVME, "WORK | Start work() at tick=%" PRIu64, getTick());
+  
   DMAFunction queueFunction = [this](uint64_t now, void *) {
     DMAFunction doRequest = [this](uint64_t, void *) {
       DMAFunction handle = [this](uint64_t now, void *) { handleRequest(now); };
@@ -1581,33 +1589,103 @@ void Controller::work() {
 }
 
 void Controller::handleRequest(uint64_t now) {
-  // Check SQFIFO
-  if (lSQFIFO.size() > 0) {
-    SQEntryWrapper *front = new SQEntryWrapper(lSQFIFO.front());
-    lSQFIFO.pop_front();
-
-    // Process command
+  debugprint(LOG_HIL_NVME, "HANDLE_REQ | Start handleRequest, total users: %zu", rrUsers.size());
+  
+  SQEntryWrapper *selectedRequest = nullptr;
+  
+  // First priority: Handle admin commands (uid=0) immediately
+  auto adminIt = lSQByUser.find(0);
+  if (adminIt != lSQByUser.end() && !adminIt->second.empty()) {
+    selectedRequest = new SQEntryWrapper(adminIt->second.front());
+    adminIt->second.pop_front();
+    debugprint(LOG_HIL_NVME, "HANDLE_REQ | Selected ADMIN command, uid=0 queue size: %zu", adminIt->second.size());
+  }
+  
+  // Second priority: Credit-aware round-robin selection for regular users
+  if (!selectedRequest && !rrUsers.empty()) {
+    // Find starting position based on lastUid
+    size_t startIdx = 0;
+    if (lastUid != 0) {
+      auto it = std::find(rrUsers.begin(), rrUsers.end(), lastUid);
+      if (it != rrUsers.end()) {
+        startIdx = (it - rrUsers.begin() + 1) % rrUsers.size();
+      }
+    }
+    
+    // DEBUG: Show round-robin state
+    debugprint(LOG_HIL_NVME, "HANDLE_REQ | RR Debug: rrUsers.size()=%zu, lastUid=%u, startIdx=%zu", 
+               rrUsers.size(), lastUid, startIdx);
+    
+    // Round-robin through users to find one that can be served
+    for (size_t i = 0; i < rrUsers.size(); ++i) {
+      uint32_t uid = rrUsers[(startIdx + i) % rrUsers.size()];
+      auto &userQueue = lSQByUser[uid];
+      
+      debugprint(LOG_HIL_NVME, "HANDLE_REQ | RR Checking [%zu/%zu] uid=%u, queue size=%zu", 
+                 i, rrUsers.size(), uid, userQueue.size());
+      
+      // Skip empty queues
+      if (userQueue.empty()) {
+        debugprint(LOG_HIL_NVME, "HANDLE_REQ | uid=%u queue empty, skipping", uid);
+        continue;
+      }
+      
+      // Bootstrap: allow the very first pick for a user unconditionally
+      bool isFirstPick = bootstrappedUsers.insert(uid).second;
+      
+      // Check if this user can be served (has credit or is new user)
+      if (isFirstPick || pSubsystem->canServe(uid)) {
+        selectedRequest = new SQEntryWrapper(userQueue.front());
+        userQueue.pop_front();
+        lastUid = uid;
+        debugprint(LOG_HIL_NVME, "HANDLE_REQ | Selected UID %u request%s, queue size now: %zu", 
+                   uid, isFirstPick ? " (bootstrap)" : "", userQueue.size());
+        break;
+      } else {
+        debugprint(LOG_HIL_NVME, "HANDLE_REQ | uid=%u REJECTED (no credit), continuing to next user", uid);
+      }
+    }
+    
+    if (!selectedRequest) {
+      debugprint(LOG_HIL_NVME, "HANDLE_REQ | RR Complete: All %zu users checked, no request selected", rrUsers.size());
+    }
+  }
+  
+  // Process the selected request
+  if (selectedRequest) {
+    debugprint(LOG_HIL_NVME, "HANDLE_REQ | Processing selected request");
+    
     DMAFunction doSubmit = [this](uint64_t, void *context) {
       SQEntryWrapper *req = (SQEntryWrapper *)context;
-
-      pSubsystem->submitCommand(
-          *req, [this](CQEntryWrapper &response) { submit(response); });
-
+      pSubsystem->submitCommand(*req, [this](CQEntryWrapper &response) { 
+        submit(response); 
+      });
       delete req;
     };
 
     if (bUseOCSSD) {
-      execute(CPU::NVME__OCSSD, CPU::SUBMIT_COMMAND, doSubmit, front);
+      execute(CPU::NVME__OCSSD, CPU::SUBMIT_COMMAND, doSubmit, selectedRequest);
     }
     else {
-      execute(CPU::NVME__SUBSYSTEM, CPU::SUBMIT_COMMAND, doSubmit, front);
+      execute(CPU::NVME__SUBSYSTEM, CPU::SUBMIT_COMMAND, doSubmit, selectedRequest);
+    }
+  } else {
+    debugprint(LOG_HIL_NVME, "HANDLE_REQ | No request selected");
+  }
+
+  // Increment request counter
+  requestCounter++;
+
+  // Check if we have more work and haven't reached the limit
+  bool hasMoreWork = false;
+  for (const auto &kv : lSQByUser) {
+    if (!kv.second.empty()) {
+      hasMoreWork = true;
+      break;
     }
   }
 
-  // Call request event
-  requestCounter++;
-
-  if (lSQFIFO.size() > 0 && requestCounter < maxRequest) {
+  if (hasMoreWork && requestCounter < maxRequest) {
     schedule(requestEvent, now + requestInterval);
   }
   else {
@@ -1633,11 +1711,33 @@ bool Controller::checkQueue(SQueue *pQueue, DMAFunction &func, void *context) {
   DMAFunction doRead = [this](uint64_t now, void *context) {
     QueueContext *pContext = (QueueContext *)context;
 
-    lSQFIFO.push_back(SQEntryWrapper(
-        pContext->entry, pContext->pQueue->getID(), pContext->pQueue->getCQID(),
-        pContext->pQueue->getHead(), pContext->oldhead));
+    // Extract user ID from NVMe command (using your existing method)
+    uint32_t uid = pContext->entry.reserved2;  // Direct extraction as per your kernel code
+    
+    // debugprint(LOG_HIL_NVME, "CHECKQUEUE | Extract UID %u from SQ %d", uid, pContext->pQueue->getID());
+    
+    // Create SQEntryWrapper
+    SQEntryWrapper entry(pContext->entry, pContext->pQueue->getID(), 
+                        pContext->pQueue->getCQID(), pContext->pQueue->getHead(), 
+                        pContext->oldhead);
+    
+    // Add to per-user queue instead of global FIFO
+    lSQByUser[uid].push_back(entry);
+    // debugprint(LOG_HIL_NVME, "CHECKQUEUE | Added to UID %u queue, size now: %zu", uid, lSQByUser[uid].size());
+    
+    // Track mapping: uid -> this SQ id
+    uidSQMap[uid].insert(pContext->pQueue->getID());
+    
+    // Add user to round-robin list if not already present
+    if (std::find(rrUsers.begin(), rrUsers.end(), uid) == rrUsers.end()) {
+        rrUsers.push_back(uid);
+        debugprint(LOG_HIL_NVME, "CHECKQUEUE | Added UID %u to RR list, total users: %zu", uid, rrUsers.size());
+    }
+    
+    // Also add to legacy FIFO for backward compatibility (can be removed later)
+    lSQFIFO.push_back(entry);
+    
     pContext->function(now, pContext->context);
-
     delete pContext;
   };
 
@@ -1676,6 +1776,43 @@ void Controller::submit(CQEntryWrapper &entry) {
   lCQFIFO.insert(iter, entry);
 
   reserveCompletion();
+}
+
+void Controller::purgeSQFromUserQueues(uint16_t sqid) {
+  // Remove all staged SQ entries coming from this SQ
+  for (auto it = lSQByUser.begin(); it != lSQByUser.end(); ++it) {
+    auto &dq = it->second;
+    if (dq.empty()) continue;
+    
+    auto newEnd = std::remove_if(dq.begin(), dq.end(),
+      [sqid](const SQEntryWrapper &w){ return w.sqID == sqid; });
+    if (newEnd != dq.end()) {
+      dq.erase(newEnd, dq.end());
+      debugprint(LOG_HIL_NVME, "PURGE | UID %u: removed items from SQ %u, remain %zu",
+                 it->first, sqid, dq.size());
+    }
+  }
+  
+  // Update uid -> SQ mapping, and RR users if a user no longer has any staged items
+  for (auto it = uidSQMap.begin(); it != uidSQMap.end(); ) {
+    it->second.erase(sqid);
+    // If this user has no staged requests and no SQ map, drop it from RR set
+    bool emptyQueue = (lSQByUser[it->first].empty());
+    if (emptyQueue && it->second.empty()) {
+      // erase from rrUsers
+      auto rit = std::find(rrUsers.begin(), rrUsers.end(), it->first);
+      if (rit != rrUsers.end()) {
+        rrUsers.erase(rit);
+        debugprint(LOG_HIL_NVME, "PURGE | Removed UID %u from RR list", it->first);
+      }
+      // also forget bootstrap mark to be safe for future reuse
+      bootstrappedUsers.erase(it->first);
+      debugprint(LOG_HIL_NVME, "PURGE | Cleaned up UID %u completely", it->first);
+      it = uidSQMap.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 void Controller::reserveCompletion() {

@@ -24,6 +24,9 @@
 
 #include <list>
 #include <unordered_map>
+#include <deque>
+#include <vector>
+#include <unordered_set>
 
 #include "hil/nvme/abstract_subsystem.hh"
 #include "hil/nvme/def.hh"
@@ -91,8 +94,18 @@ class Controller : public StatObject {
   CQueue **ppCQueue;  //!< Completion Queue array
   SQueue **ppSQueue;  //!< Submission Queue array
 
-  std::list<SQEntryWrapper> lSQFIFO;  //!< Internal FIFO queue for submission
+  std::list<SQEntryWrapper> lSQFIFO;  //!< Internal FIFO queue for submission (deprecated)
   std::list<CQEntryWrapper> lCQFIFO;  //!< Internal FIFO queue for completion
+  
+  // Per-user virtual queues for credit-aware scheduling
+  std::unordered_map<uint32_t, std::deque<SQEntryWrapper>> lSQByUser;  //!< Per-user staging queues
+  std::vector<uint32_t> rrUsers;      //!< Round-robin user list
+  uint32_t lastUid;                   //!< Last served user ID
+  
+  // Track which SQ(s) a user has requests from
+  std::unordered_map<uint32_t, std::unordered_set<uint16_t>> uidSQMap;
+  // First-seen users are allowed once to bootstrap scheduler accounting
+  std::unordered_set<uint32_t> bootstrappedUsers;
 
   bool shutdownReserved;
 
@@ -113,6 +126,7 @@ class Controller : public StatObject {
   uint64_t lastWorkAt;
 
   bool checkQueue(SQueue *, DMAFunction &, void *);
+  void purgeSQFromUserQueues(uint16_t sqid);
 
  public:
   Controller(Interface *, ConfigReader &);

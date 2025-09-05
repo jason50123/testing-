@@ -15,6 +15,7 @@
 
 #include "utils/debug.hh"
 #include "utils/math.hh"
+#include "hil/hil.hh"  // for gScheduler
 
 #define PR_SECTION LOG_ISC_UTIL_FTL
 
@@ -122,6 +123,18 @@ void FTL::read(void *buf, size_t ofs, size_t sz _ADD_SIM_PARAMS) {
   ICL::Request cReq(hReq);
   pr("Changed cReq: {slpn,nlp}={%lu,%lu} | ofs,len=%lu,%lu", cReq.range.slpn,
      cReq.range.nlp, cReq.offset, cReq.length);
+
+  // Check and deduct credit for ISC workload control
+  if (gScheduler) {
+    uint64_t pages = (sz + PAGE_SIZE - 1) / PAGE_SIZE;
+    auto *cs = dynamic_cast<SimpleSSD::HIL::CreditScheduler*>(gScheduler);
+    if (cs) {
+      // Always deduct credit for ISC workload to track consumption
+      // If insufficient, use overdraft but still track
+      gScheduler->useCreditISC(hReq.userID, pages);
+      pr("ISC FTL::read charged %lu pages for user %u", pages, hReq.userID);
+    }
+  }
 
   // FTL latencies should already handled inside
   ((SimpleSSD::ICL::ICL *)cache)->read(cReq, simTick);

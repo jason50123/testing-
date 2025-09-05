@@ -20,6 +20,7 @@
 #include "hil/hil.hh"
 #include "hil/nvme/namespace.hh"
 #include "hil/scheduler/fcfs_scheduler.hh"
+#include "hil/scheduler/credit_scheduler.hh"
 
 #include "util/algorithm.hh"
 #include "util/def.hh"
@@ -66,8 +67,8 @@ HIL::HIL(ConfigReader &c) : conf(c), reqCount(0), lastScheduled(0) {
       // refillInterval: 25M ticks ≈ 0.5 秒 (合理的補充間隔)
       // pScheduler = new CreditScheduler(pICL, /*rate*/200, /*cap*/1000, /*interval*/0);
       pScheduler = new CreditScheduler(pICL,
-                                 10 * SimClock::Int::us,
-                                 SimClock::Frequency);
+                                 10 * 1000000ULL,
+                                 1000000000000ULL);
       currentSchedulerType = SchedulerType::CREDIT;
       debugprint(LOG_HIL, "Use Dynamic CreditScheduler (cfg)");
       break;
@@ -92,25 +93,24 @@ void HIL::read(Request &req) {
     uint64_t tick = beginAt;
 
     pReq->reqID = ++reqCount;
-    pReq->op    = OpType::READ;
+    pReq->op    = OpType::READ; 
 
     debugprint(LOG_HIL,
                "READ  | REQ %7u | LCA %" PRIu64 " + %" PRIu64 " | BYTE %" PRIu64
                " + %" PRIu64,
                pReq->reqID, pReq->range.slpn, pReq->range.nlp, pReq->offset,
                pReq->length);
-
+      
     // ★ 讓排程器「同步」處理到這筆 req 完成，tick 會在內部被 ICL 更新為完成時間
     pScheduler->processUntil(*pReq, tick);
-
-    // 統計 & 完成回報
     stat.request[0]++;
     stat.iosize[0] += pReq->length;
-    updateBusyTime(0, beginAt, tick);   // HIL busy
-    updateBusyTime(2, beginAt, tick);   // Device busy (依原框架)
+    updateBusyTime(0, beginAt, tick);
+    updateBusyTime(2, beginAt, tick);
 
     pReq->finishedAt = tick;
     completionQueue.push(*pReq);
+
     updateCompletion();
 
     delete pReq;
@@ -118,6 +118,7 @@ void HIL::read(Request &req) {
 
   execute(CPU::HIL, CPU::READ, doRead, new Request(req));
 }
+
 
 void HIL::switchScheduler(SchedulerType type) {
   if (type == currentSchedulerType) {
@@ -135,8 +136,8 @@ void HIL::switchScheduler(SchedulerType type) {
       break;
     case SchedulerType::CREDIT:
       pScheduler = new CreditScheduler(pICL,
-                                 10 * SimClock::Int::us,
-                                 SimClock::Frequency);     
+                                 10 * 1000000ULL,
+                                 1000000000000ULL);     
       gScheduler = pScheduler; 
       pr("Switched to Dynamic Credit scheduler");
       break;
@@ -287,7 +288,7 @@ void HIL::write(Request &req) {
     uint64_t tick = beginAt;
 
     pReq->reqID = ++reqCount;
-    pReq->op    = OpType::WRITE;
+    pReq->op = OpType::WRITE;
 
     debugprint(LOG_HIL,
                "WRITE | REQ %7u | LCA %" PRIu64 " + %" PRIu64 " | BYTE %" PRIu64
@@ -298,7 +299,7 @@ void HIL::write(Request &req) {
     // ★ 同步等到完成
     pScheduler->processUntil(*pReq, tick);
 
-    // 統計 & 完成回報
+
     stat.request[1]++;
     stat.iosize[1] += pReq->length;
     updateBusyTime(1, beginAt, tick);
@@ -306,6 +307,7 @@ void HIL::write(Request &req) {
 
     pReq->finishedAt = tick;
     completionQueue.push(*pReq);
+
     updateCompletion();
 
     delete pReq;
@@ -507,6 +509,24 @@ void HIL::resetStatValues() {
     pScheduler->resetStatValues();
   
   pICL->resetStatValues();
+}
+
+bool HIL::canServe(uint32_t uid) const {
+  if (!pScheduler) {
+    debugprint(LOG_HIL, "canServe: uid=%u ALLOW (no scheduler)", uid);
+    return true;  // No scheduler, always can serve
+  }
+  
+  // Check if this is a CreditScheduler and query credit status
+  auto *cs = dynamic_cast<CreditScheduler*>(pScheduler);
+  if (cs) {
+    bool canServe = cs->checkCredit(uid, 1);  // Conservative check: at least 1 page credit
+    debugprint(LOG_HIL, "canServe: uid=%u -> %s", uid, canServe ? "ALLOW" : "REJECT");
+    return canServe;
+  }
+  
+  debugprint(LOG_HIL, "canServe: uid=%u ALLOW (not CreditScheduler)", uid);
+  return true;  // Default: assume can serve for other schedulers
 }
 
 }  // namespace HIL

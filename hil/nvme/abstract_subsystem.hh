@@ -46,6 +46,9 @@ class AbstractSubsystem : public StatObject {
   virtual void submitCommand(SQEntryWrapper &, RequestFunction) = 0;
   virtual void getNVMCapacity(uint64_t &, uint64_t &) = 0;
   virtual uint32_t validNamespaceCount() = 0;
+  
+  // Credit-aware scheduling interface
+  virtual bool canServe(uint32_t uid) const = 0;
 };
 
 }  // namespace NVMe

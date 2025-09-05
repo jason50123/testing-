@@ -86,6 +86,9 @@ class HIL : public StatObject {
 
   void getLPNInfo(uint64_t &, uint32_t &);
   uint64_t getUsedPageCount(uint64_t, uint64_t);
+  
+  // Credit-aware scheduling interface
+  bool canServe(uint32_t uid) const;
 
   void getStatList(std::vector<Stats> &, std::string) override;
   void getStatValues(std::vector<double> &) override;

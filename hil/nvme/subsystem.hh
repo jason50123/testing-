@@ -84,6 +84,9 @@ class Subsystem : public AbstractSubsystem {
   void trim(Namespace *, uint64_t, uint64_t, DMAFunction &, void *);
   void isc_get(Namespace *, uint64_t, uint64_t, uint32_t, DMAFunction &, void *);
   void isc_set(Namespace *, uint64_t, uint64_t, DMAFunction &, void *);
+  
+  // Credit-aware scheduling interface
+  bool canServe(uint32_t uid) const;
 
   void getStatList(std::vector<Stats> &, std::string) override;
   void getStatValues(std::vector<double> &) override;

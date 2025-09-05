@@ -39,7 +39,7 @@ typedef struct _LPNRange {
 
 namespace HIL {
 
-enum class OpType : uint8_t {      
+enum class OpType : uint8_t {
   READ,
   WRITE,
   FLUSH,
@@ -51,6 +51,14 @@ enum class OpType : uint8_t {
   ISC_RESULT,
 };
 
+// 新增：請求狀態枚舉
+enum class RequestState : uint8_t {
+  NORMAL = 0,      // 正常請求
+  DEFERRED = 1,    // 因 credit 不足被延遲
+  RESUMED = 2,     // 從延遲隊列恢復執行
+  COMPLETED = 3    // 已完成
+};
+
 typedef struct _Request {
   uint64_t reqID;
   uint64_t reqSubID;
@@ -60,18 +68,28 @@ typedef struct _Request {
   
   uint32_t userID;   ///< host uid (encoded by driver)
   uint32_t prio;
-
-  OpType   op;  
+  
+  OpType   op;
   
   const void *ns;
-
+  
   uint64_t finishedAt;
   DMAFunction function;
   void *context;
-
+  
+  // ========== 新增欄位 ==========
+  RequestState state;           // 請求狀態
+  uint64_t creditNeeded;        // 需要的 credit (pages)
+  uint64_t deferTime;           // 延遲開始時間
+  
+  // 保存原始 callback（用於延遲後恢復）
+  DMAFunction originalFunction;
+  void *originalContext;
+  // ==============================
+  
   _Request();
   _Request(DMAFunction &, void *);
-
+  
   bool operator()(const _Request &a, const _Request &b);
 } Request;
 
@@ -85,10 +103,10 @@ typedef struct _Request {
   uint64_t offset;    // logical block offset in this page
   uint64_t length;    // nlb * bsz
   LPNRange range;
-
-  uint32_t userID;   
+  
+  uint32_t userID;
   uint32_t prio;
-
+  
   _Request();
   _Request(HIL::Request &);
 } Request;

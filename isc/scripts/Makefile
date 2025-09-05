@@ -34,7 +34,7 @@ ext4: ${DISK_FILE}
 	MKE2FS_CONFIG=${EXT4_CONF} ${EXT4_BIN} ${DISK_FILE}
 
 EXT4_INIT_SCRIPT_DIR	?= ${SCRIPT_DIR}/ext4-init-scripts
-EXT4_INIT_SCRIPT_FILES	?= statdir-layout.sh
+EXT4_INIT_SCRIPT_FILES ?= all-workloads.sh
 EXT4_INIT_SCRIPT_PATHS	:= $(addprefix ${EXT4_INIT_SCRIPT_DIR}/,${EXT4_INIT_SCRIPT_FILES})
 ext4-init: ext4 ${EXT4_INIT_SCRIPT_PATHS}
 	@for s in ${EXT4_INIT_SCRIPT_PATHS}; do $$s ${DISK_FILE} || exit $?; done
