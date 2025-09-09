@@ -78,6 +78,7 @@ class CreditScheduler : public Scheduler
         uint64_t   totalConsumed  = 0;
         uint64_t   consumedHost   = 0;        // ★ 新增：host 類 I/O 消耗
         uint64_t   consumedISC    = 0;        // ★ 新增：ISC 類 I/O 消耗
+        bool       isSLO          = false;    // ★ 新增：是否屬於 SLO 組（true）或 BE 組（false）
         bool       isActive       = false;
         uint64_t   lastRefillTick = 0;        // 上次補充時間（tick）
         uint32_t   idlePeriods    = 0;
@@ -120,6 +121,10 @@ class CreditScheduler : public Scheduler
 
     // —— 新增：全域上次補發時間（節流，只在到期補發）——
     uint64_t         lastGlobalRefillTick_ = 0;
+
+    // Work-conserving with SLO-first 配置（骨架）
+    bool             shareIdleCapacity_ = true;   // 是否僅在活躍者間分配（true）
+    uint64_t         sloWindowTicks_    = 0;      // 可選：SLO 視窗（未啟用保證時僅佔位）
 
 
     // ---- 一般請求的延遲佇列（Host/ISC 的 Request 直接排入等待扣款）----

@@ -1632,17 +1632,23 @@ void Controller::handleRequest(uint64_t now) {
       
       // Bootstrap: allow the very first pick for a user unconditionally
       bool isFirstPick = bootstrappedUsers.insert(uid).second;
-      
-      // Check if this user can be served (has credit or is new user)
-      if (isFirstPick || pSubsystem->canServe(uid)) {
-        selectedRequest = new SQEntryWrapper(userQueue.front());
+
+      // Peek the front request to compute actual need (in LBAs)
+      const SQEntryWrapper &front = userQueue.front();
+      // NVMe nlb field: lower 16 bits of dword12 + 1
+      uint16_t nlb = (front.entry.dword12 & 0xFFFF) + 1;
+      size_t needPages = static_cast<size_t>(nlb); // assume 1 LBA == 1 page for 4K
+
+      // Check if this user can be served (has enough credit for this request or is new user)
+      if (isFirstPick || pSubsystem->canServe(uid, needPages)) {
+        selectedRequest = new SQEntryWrapper(front);
         userQueue.pop_front();
         lastUid = uid;
-        // debugprint(LOG_HIL_NVME, "HANDLE_REQ | Selected UID %u request%s, queue size now: %zu", 
-        //            uid, isFirstPick ? " (bootstrap)" : "", userQueue.size());
+        // debugprint(LOG_HIL_NVME, "HANDLE_REQ | Selected UID %u request%s (need=%zu), queue size now: %zu",
+        //            uid, isFirstPick ? " (bootstrap)" : "", needPages, userQueue.size());
         break;
       } else {
-        // debugprint(LOG_HIL_NVME, "HANDLE_REQ | uid=%u REJECTED (no credit), continuing to next user", uid);
+        // debugprint(LOG_HIL_NVME, "HANDLE_REQ | uid=%u REJECTED need=%zu (no credit), continuing", uid, needPages);
       }
     }
     

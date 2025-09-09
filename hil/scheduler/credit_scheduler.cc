@@ -39,6 +39,7 @@ CreditScheduler::CreditScheduler(ICL::ICL* icl, uint64_t period_ticks, uint64_t 
     statUsers_.clear();
     statUsers_.push_back(1001);
     statUsers_.push_back(1002);
+    statUsers_.push_back(1003); // 新增 best-effort 使用者
     for (uint32_t uid : statUsers_) {
         auto &acc = getOrCreateUser(uid);
         acc.isActive       = false;
@@ -199,99 +200,90 @@ void CreditScheduler::tick(Tick &now)
                    "tick:%" PRIu64 " admin-dispatched=%zu", now, admin_dispatched);
     }
 
-    // (1) 固定相位補發：逐期補齊所有到期的 period
+    // (1) 固定相位補發：逐期補齊所有到期的 period（SLO 先分、剩餘給 BE）
     while (timerStarted && now >= lastGlobalRefillTick_) {
-        uint64_t activeTotalWeight = 0;
+        uint64_t activeWAll = 0, activeWSLO = 0, activeWBE = 0;
         // Idle 寬限期：queue 暫空但尚在寬限內仍計入分母；超過寬限則暫停發放
         for (auto &kv : users) {
             auto &acc = kv.second;
             bool emptyQ = acc.queue.empty() && acc.queueISC.empty();
             if (acc.isActive) {
                 if (emptyQ) {
-                    // 沒流量 → 累積 idle 期數；但要考慮用戶總消耗量
                     if (acc.idlePeriods < UINT32_MAX) acc.idlePeriods++;
-                    // 只有真正處理過IO的用戶才會被deactivate (避免剛激活就被關閉)
-                    // TEMPORARILY DISABLED: Testing if deactivation causes credit starvation
-                    /*
-                    if (IdleGracePeriods > 0 && acc.idlePeriods > IdleGracePeriods && acc.totalConsumed > 0) {
-                        acc.isActive = false;
-                        debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                                   "deactivate: uid=%u idlePeriods=%u (> %u) totalConsumed=%" PRIu64,
-                                   (unsigned)kv.first, acc.idlePeriods, IdleGracePeriods, acc.totalConsumed);
-                    }
-                    */
                 } else {
-                    // 有流量 → 清零 idle 計數，確保持續計入活躍分母
                     acc.idlePeriods = 0;
                 }
             }
-            if (acc.isActive) activeTotalWeight += acc.weight;
+            if (acc.isActive) {
+                activeWAll += acc.weight;
+                if (acc.isSLO) activeWSLO += acc.weight; else activeWBE += acc.weight;
+            }
         }
 
         debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                   "refill-phase: phaseTick=%" PRIu64 " activeW=%" PRIu64,
-                   lastGlobalRefillTick_, activeTotalWeight);
+                   "refill-phase: t=%" PRIu64 " activeW(all=%" PRIu64 ", slo=%" PRIu64 ", be=%" PRIu64 ")",
+                   lastGlobalRefillTick_, activeWAll, activeWSLO, activeWBE);
 
         // 相位內彙總（便於 CREDSTAT）：只針對常見 UID 1001/1002（若不存在則為 0）
         uint64_t add1001 = 0, add1002 = 0;
 
-        if (activeTotalWeight > 0) {
+        double budget = pagesPerPeriod_;
+        double remaining = budget;
+
+        auto alloc_share = [&](bool sloPhase, double phaseBudget) -> double {
+            if (phaseBudget <= 0.0) return 0.0;
+            uint64_t activeW = sloPhase ? activeWSLO : activeWBE;
+            if (activeW == 0) return 0.0;
+            double consumed = 0.0;
             for (auto &kv : users) {
                 auto &acc = kv.second;
                 if (!acc.isActive) continue;
+                if (acc.isSLO != sloPhase) continue;
 
-                double exact =
-                    pagesPerPeriod_ *
-                    (static_cast<double>(acc.weight) / static_cast<double>(activeTotalWeight));
+                double exact = phaseBudget * (static_cast<double>(acc.weight) / static_cast<double>(activeW));
                 double sum  = exact + acc.carry;
-                uint64_t add = static_cast<uint64_t>(sum);   // 向下取整灌 token
-                acc.carry   = sum - static_cast<double>(add);
+                uint64_t target = static_cast<uint64_t>(sum);   // 向下取整
+                uint64_t headroom = (acc.credit >= acc.creditCap) ? 0ULL : (acc.creditCap - acc.credit);
+                uint64_t add = (target > headroom) ? headroom : target;
+                acc.carry   = sum - static_cast<double>(add); // 若因 cap 限制，將未發放部分留在 carry
 
                 uint64_t before = acc.credit;
-                acc.credit = std::min(acc.credit + add, acc.creditCap);
-                acc.lastRefillTick = lastGlobalRefillTick_;  // 真正補發時刻
+                acc.credit += add;
+                acc.lastRefillTick = lastGlobalRefillTick_;
 
                 if (add) {
                     debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                               "refill: uid=%u add=%" PRIu64 " carry=%.4f credit=%" PRIu64 " cap=%" PRIu64 " weight=%" PRIu64 " share=%.3f",
-                               (unsigned)kv.first, add, acc.carry, acc.credit, acc.creditCap, acc.weight, 
-                               activeTotalWeight > 0 ? (double)acc.weight / activeTotalWeight : 0.0);
-                    if (before + add > acc.creditCap) {
-                        debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                                   "refill-cap: uid=%u cap=%" PRIu64 " before=%" PRIu64 " add=%" PRIu64,
-                                   (unsigned)kv.first, acc.creditCap, before, add);
-                    }
+                               "refill-%s: uid=%u add=%" PRIu64 " carry=%.4f credit=%" PRIu64 " cap=%" PRIu64 " w=%" PRIu64,
+                               sloPhase ? "SLO" : "BE", (unsigned)kv.first, add, acc.carry, acc.credit, acc.creditCap, acc.weight);
                     if ((unsigned)kv.first == 1001) add1001 += add;
                     if ((unsigned)kv.first == 1002) add1002 += add;
                 }
+                consumed += static_cast<double>(add);
             }
+            return consumed; // pages consumed in this phase
+        };
+
+        // SLO 先分配
+        double usedSLO = alloc_share(true, budget);
+        remaining = budget - usedSLO;
+        // 剩餘給 BE（work-conserving）
+        if (remaining > 0.0) {
+            double usedBE = alloc_share(false, remaining);
+            (void)usedBE;
         }
 
         // 低噪音彙總：關心 1001/1002 的相位配額與目前 credit（若不存在則 0）
         uint64_t c1 = 0, c2 = 0, w1 = 0, w2 = 0;
-        { 
-            auto it = users.find(1001); 
-            if (it != users.end()) { 
-                c1 = it->second.credit; 
-                w1 = it->second.weight;
-            } 
-        }
-        { 
-            auto it = users.find(1002); 
-            if (it != users.end()) { 
-                c2 = it->second.credit; 
-                w2 = it->second.weight;
-            } 
-        }
+        { auto it = users.find(1001); if (it != users.end()) { c1 = it->second.credit; w1 = it->second.weight; } }
+        { auto it = users.find(1002); if (it != users.end()) { c2 = it->second.credit; w2 = it->second.weight; } }
         debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                   "CREDSTAT: phase=%" PRIu64 " activeW=%" PRIu64 " pagesPerPeriod=%.2f"
-                   " add{1001}=%" PRIu64 " add{1002}=%" PRIu64
+                   "CREDSTAT: phase=%" PRIu64 " activeW=%" PRIu64 " pagesPerPeriod=%.2f add{1001}=%" PRIu64 " add{1002}=%" PRIu64
                    " credit{1001}=%" PRIu64 " credit{1002}=%" PRIu64
                    " expectedShare{1001}=%.3f expectedShare{1002}=%.3f",
-                   lastGlobalRefillTick_, activeTotalWeight, pagesPerPeriod_, add1001, add1002, c1, c2,
-                   activeTotalWeight > 0 ? static_cast<double>(w1) / activeTotalWeight : 0.0,
-                   activeTotalWeight > 0 ? static_cast<double>(w2) / activeTotalWeight : 0.0);
- 
+                   lastGlobalRefillTick_, activeWAll, pagesPerPeriod_, add1001, add1002, c1, c2,
+                   activeWAll > 0 ? static_cast<double>(w1) / activeWAll : 0.0,
+                   activeWAll > 0 ? static_cast<double>(w2) / activeWAll : 0.0);
+
         // 推進到下一個固定相位
         lastGlobalRefillTick_ += periodTicks_;
     }
@@ -457,6 +449,7 @@ CreditScheduler::getOrCreateUser(uint32_t uid)
 
     UserAccount acc;
     acc.weight        = (uid == 1002 ? 7 : uid == 1001 ? 3 : 1); // 範例：依 UID 給不同權重
+    acc.isSLO         = (uid == 1001 || uid == 1002);            // 1001/1002 視為 SLO，其他（如 1003）為 BE
     acc.creditCap     = static_cast<uint64_t>(pagesPerPeriod_ * 500); // 500 periods 緩衝，避免cap限制
     if (acc.creditCap < 50) acc.creditCap = 50;
 

@@ -529,6 +529,23 @@ bool HIL::canServe(uint32_t uid) const {
   return true;  // Default: assume can serve for other schedulers
 }
 
+bool HIL::canServe(uint32_t uid, size_t need) const {
+  if (!pScheduler) {
+    debugprint(LOG_HIL, "canServe(need): uid=%u need=%zu ALLOW (no scheduler)", uid, need);
+    return true;
+  }
+
+  auto *cs = dynamic_cast<CreditScheduler*>(pScheduler);
+  if (cs) {
+    bool allow = cs->checkCredit(uid, need);
+    debugprint(LOG_HIL, "canServe(need): uid=%u need=%zu -> %s", uid, need, allow ? "ALLOW" : "REJECT");
+    return allow;
+  }
+
+  debugprint(LOG_HIL, "canServe(need): uid=%u need=%zu ALLOW (not CreditScheduler)", uid, need);
+  return true;
+}
+
 }  // namespace HIL
 
 }  // namespace SimpleSSD

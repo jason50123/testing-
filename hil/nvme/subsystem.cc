@@ -1444,6 +1444,13 @@ bool Subsystem::canServe(uint32_t uid) const {
   return result;
 }
 
+bool Subsystem::canServe(uint32_t uid, size_t need) const {
+  // Query HIL with actual required pages for stricter admission
+  bool result = pHIL->canServe(uid, need);
+  debugprint(LOG_HIL_NVME, "SUBSYS_CANSERVE | uid=%u need=%zu -> %s", uid, need, result ? "ALLOW" : "REJECT");
+  return result;
+}
+
 }  // namespace NVMe
 
 }  // namespace HIL

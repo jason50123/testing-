@@ -87,6 +87,7 @@ class Subsystem : public AbstractSubsystem {
   
   // Credit-aware scheduling interface
   bool canServe(uint32_t uid) const;
+  bool canServe(uint32_t uid, size_t need) const;
 
   void getStatList(std::vector<Stats> &, std::string) override;
   void getStatValues(std::vector<double> &) override;

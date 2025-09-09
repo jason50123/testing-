@@ -89,6 +89,8 @@ class HIL : public StatObject {
   
   // Credit-aware scheduling interface
   bool canServe(uint32_t uid) const;
+  // Overload: consider actual needed pages for admission
+  bool canServe(uint32_t uid, size_t need) const;
 
   void getStatList(std::vector<Stats> &, std::string) override;
   void getStatValues(std::vector<double> &) override;
