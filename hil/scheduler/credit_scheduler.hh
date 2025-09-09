@@ -55,6 +55,13 @@ class CreditScheduler : public Scheduler
     void useCredit(uint32_t uid, size_t used) override;
     void useCreditISC(uint32_t uid, size_t used) override;
     
+    // ★ NEW: ICL Deferred Execution Support
+    // These methods support strict credit control for ISC tasks via ICL
+    uint64_t predictICLLatency(const ICL::Request& req, uint64_t tick);
+    void submitICLDeferred(const ICL::Request& req, uint32_t uid, 
+                          uint64_t tick, uint64_t latency, uint64_t pages);
+    void processDeferredICL(uint64_t now);
+    
     // （選用）小工具：若你要在別處查詢/扣款
     void     chargeUserCredit(uint32_t uid, uint64_t pages);
     uint64_t getUserCredit(uint32_t uid) const;
@@ -133,6 +140,17 @@ class CreditScheduler : public Scheduler
         void   (*resume)(void*, uint64_t) = nullptr;
     };
     std::queue<DeferredCustom> deferredISC_;
+
+    // ---- ICL 延遲佇列（專門處理 ICL 請求的延遲執行）----
+    struct DeferredICLRequest {
+        ICL::Request iclReq;
+        uint32_t uid = 0;
+        uint64_t tick = 0;
+        uint64_t predictedLatency = 0;
+        uint64_t pages = 0;
+        uint64_t deferTime = 0;
+    };
+    std::queue<DeferredICLRequest> deferredICL_;
 
     // ------------------------------------------------------------
     // 核心流程

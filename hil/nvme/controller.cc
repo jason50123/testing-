@@ -1612,21 +1612,21 @@ void Controller::handleRequest(uint64_t now) {
       }
     }
     
-    // DEBUG: Show round-robin state
-    debugprint(LOG_HIL_NVME, "HANDLE_REQ | RR Debug: rrUsers.size()=%zu, lastUid=%u, startIdx=%zu", 
-               rrUsers.size(), lastUid, startIdx);
+    // DEBUG: Show round-robin state (commented to prevent log explosion)
+    // debugprint(LOG_HIL_NVME, "HANDLE_REQ | RR Debug: rrUsers.size()=%zu, lastUid=%u, startIdx=%zu", 
+    //            rrUsers.size(), lastUid, startIdx);
     
     // Round-robin through users to find one that can be served
     for (size_t i = 0; i < rrUsers.size(); ++i) {
       uint32_t uid = rrUsers[(startIdx + i) % rrUsers.size()];
       auto &userQueue = lSQByUser[uid];
       
-      debugprint(LOG_HIL_NVME, "HANDLE_REQ | RR Checking [%zu/%zu] uid=%u, queue size=%zu", 
-                 i, rrUsers.size(), uid, userQueue.size());
+      // debugprint(LOG_HIL_NVME, "HANDLE_REQ | RR Checking [%zu/%zu] uid=%u, queue size=%zu", 
+      //            i, rrUsers.size(), uid, userQueue.size());
       
       // Skip empty queues
       if (userQueue.empty()) {
-        debugprint(LOG_HIL_NVME, "HANDLE_REQ | uid=%u queue empty, skipping", uid);
+        // debugprint(LOG_HIL_NVME, "HANDLE_REQ | uid=%u queue empty, skipping", uid);
         continue;
       }
       
@@ -1638,16 +1638,16 @@ void Controller::handleRequest(uint64_t now) {
         selectedRequest = new SQEntryWrapper(userQueue.front());
         userQueue.pop_front();
         lastUid = uid;
-        debugprint(LOG_HIL_NVME, "HANDLE_REQ | Selected UID %u request%s, queue size now: %zu", 
-                   uid, isFirstPick ? " (bootstrap)" : "", userQueue.size());
+        // debugprint(LOG_HIL_NVME, "HANDLE_REQ | Selected UID %u request%s, queue size now: %zu", 
+        //            uid, isFirstPick ? " (bootstrap)" : "", userQueue.size());
         break;
       } else {
-        debugprint(LOG_HIL_NVME, "HANDLE_REQ | uid=%u REJECTED (no credit), continuing to next user", uid);
+        // debugprint(LOG_HIL_NVME, "HANDLE_REQ | uid=%u REJECTED (no credit), continuing to next user", uid);
       }
     }
     
     if (!selectedRequest) {
-      debugprint(LOG_HIL_NVME, "HANDLE_REQ | RR Complete: All %zu users checked, no request selected", rrUsers.size());
+      // debugprint(LOG_HIL_NVME, "HANDLE_REQ | RR Complete: All %zu users checked, no request selected", rrUsers.size());
     }
   }
   

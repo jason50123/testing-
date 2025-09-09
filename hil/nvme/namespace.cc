@@ -559,6 +559,12 @@ void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
              " + %d | uid : %d",
              req.sqID, req.sqUID, req.entry.dword0.commandID, nsid, slba, nlb, uid);
 
+  // ★ NEW: Admin ISC task tracking for parser
+  if (uid == 0) {
+    debugprint(LOG_HIL_NVME, "ADMIN_ISC_START: uid=0 slba=%" PRIX64 " nlb=%d isc_subcmd=%s", 
+               slba, nlb, ISC_SUBCMD_IS(slba, ISC_SUBCMD_SLET_RES) ? "SLET_RES" : "OTHER");
+  }
+
   if (!noDMA) {
 
     DMAFunction doISC = [this](uint64_t tick, void *context) {
@@ -607,6 +613,12 @@ void Namespace::isc_get(SQEntryWrapper &req, RequestFunction &func) {
         //Calculate page size and send to scheduler 
 
         const uint64_t pages = (rsz + PAGE_SIZE - 1) / PAGE_SIZE;
+        
+        // ★ NEW: Admin ISC resource consumption tracking
+        if (pContext->uid == 0) {
+          debugprint(LOG_HIL_NVME, "ADMIN_ISC_CONSUME: uid=0 result_size=%lu pages=%lu subcmd_id=%lu", 
+                     rsz, pages, ISC_SUBCMD_OPT(pContext->slba));
+        }
         // 只在 CreditScheduler 啟用時做 credit gate
         if (gScheduler) {
           auto *cs = dynamic_cast<SimpleSSD::HIL::CreditScheduler*>(gScheduler);

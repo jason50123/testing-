@@ -348,6 +348,8 @@ void CreditScheduler::tick(Tick &now)
         }
     }
     
+    // (2.5) 處理延遲的 ICL 請求 - 已移除，改為FTL層直接執行
+    
     // (3) 真正 RR 交錯派發：每輪最多派發 1 筆，再從 lastChosenUid 的下一位重啟
     if (!users.empty()) {
         const size_t MAX_DISPATCH_PER_TICK = 4096; // 安全上限，避免無窮迴圈
@@ -724,6 +726,68 @@ uint64_t CreditScheduler::getUserCredit(uint32_t uid) const {
 uint64_t CreditScheduler::getUserWeight(uint32_t uid) const {
     auto it = users.find(uid);
     return (it == users.end()) ? 1 : it->second.weight;
+}
+
+// ============================================================================
+// ICL 延遲執行支持方法
+// ============================================================================
+
+uint64_t CreditScheduler::predictICLLatency(const ICL::Request& req, uint64_t) {
+    // 基於 ICL 請求預測延遲時間
+    // 簡單估算：每個邏輯頁約需 100 ticks 的處理時間
+    uint64_t baseLatency = 100;  // 基礎延遲
+    uint64_t pagesLatency = req.range.nlp * baseLatency;  // 基於頁數的延遲
+    
+    // debugprint removed to prevent log explosion
+    
+    return pagesLatency;
+}
+
+void CreditScheduler::submitICLDeferred(const ICL::Request& req, uint32_t uid, 
+                                      uint64_t tick, uint64_t latency, uint64_t pages) {
+    DeferredICLRequest deferredReq;
+    deferredReq.iclReq = req;
+    deferredReq.uid = uid;
+    deferredReq.tick = tick;
+    deferredReq.predictedLatency = latency;
+    deferredReq.pages = pages;
+    deferredReq.deferTime = SimpleSSD::getTick();
+    
+    deferredICL_.push(deferredReq);
+    
+    // debugprint removed to prevent log explosion
+}
+
+void CreditScheduler::processDeferredICL(uint64_t) {
+    // 處理延遲的 ICL 請求：檢查是否有足夠 credit 可以執行
+    std::queue<DeferredICLRequest> remainingRequests;
+    
+    while (!deferredICL_.empty()) {
+        DeferredICLRequest& deferredReq = deferredICL_.front();
+        deferredICL_.pop();
+        
+        // 檢查用戶是否有足夠的 credit
+        if (checkCredit(deferredReq.uid, deferredReq.pages)) {
+            // 有足夠 credit，立即執行 ICL 請求
+            useCreditISC(deferredReq.uid, deferredReq.pages);
+            
+            debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                       "processDeferredICL: EXECUTING uid=%u, pages=%" PRIu64 ", tick=%" PRIu64,
+                       deferredReq.uid, deferredReq.pages, deferredReq.tick);
+            
+            // 執行實際的 ICL 操作
+            uint64_t executionTick = deferredReq.tick;
+            pICL->read(deferredReq.iclReq, executionTick);
+            
+        } else {
+            // 仍無足夠 credit，重新放回佇列
+            remainingRequests.push(deferredReq);
+            // debugprint removed to prevent log explosion
+        }
+    }
+    
+    // 將仍無法執行的請求放回佇列
+    deferredICL_ = std::move(remainingRequests);
 }
 
 
