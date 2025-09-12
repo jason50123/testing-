@@ -227,49 +227,67 @@ void CreditScheduler::tick(Tick &now)
         // 相位內彙總（便於 CREDSTAT）：只針對常見 UID 1001/1002（若不存在則為 0）
         uint64_t add1001 = 0, add1002 = 0;
 
-        double budget = pagesPerPeriod_;
-        double remaining = budget;
+        // SLO 先分配：若 SLO 有活躍者，整個 phase 的配額都屬於 SLO。
+        // 僅因 SLO 用戶達 cap 無法發放的部分才溢出給 BE；四捨五入的小數留在 SLO 的 carry，不外溢。
+        double phaseBudget = pagesPerPeriod_;
+        double spillToBE = 0.0;
 
-        auto alloc_share = [&](bool sloPhase, double phaseBudget) -> double {
-            if (phaseBudget <= 0.0) return 0.0;
-            uint64_t activeW = sloPhase ? activeWSLO : activeWBE;
-            if (activeW == 0) return 0.0;
-            double consumed = 0.0;
+        if (activeWSLO > 0) {
             for (auto &kv : users) {
                 auto &acc = kv.second;
-                if (!acc.isActive) continue;
-                if (acc.isSLO != sloPhase) continue;
+                if (!acc.isActive || !acc.isSLO) continue;
 
-                double exact = phaseBudget * (static_cast<double>(acc.weight) / static_cast<double>(activeW));
-                double sum  = exact + acc.carry;
-                uint64_t target = static_cast<uint64_t>(sum);   // 向下取整
+                double exact   = phaseBudget * (static_cast<double>(acc.weight) / static_cast<double>(activeWSLO));
+                double sum     = exact + acc.carry;
+                uint64_t target   = static_cast<uint64_t>(sum);   // 本期欲發放的整數頁
                 uint64_t headroom = (acc.credit >= acc.creditCap) ? 0ULL : (acc.creditCap - acc.credit);
-                uint64_t add = (target > headroom) ? headroom : target;
-                acc.carry   = sum - static_cast<double>(add); // 若因 cap 限制，將未發放部分留在 carry
+                uint64_t add      = (target > headroom) ? headroom : target;
 
-                uint64_t before = acc.credit;
+                if (headroom < target) {
+                    spillToBE += (sum - static_cast<double>(add));
+                    acc.carry  = 0.0;  // cap 狀態不可累積小數
+                } else {
+                    acc.carry  = sum - static_cast<double>(add);
+                }
+
                 acc.credit += add;
                 acc.lastRefillTick = lastGlobalRefillTick_;
 
                 if (add) {
                     debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                               "refill-%s: uid=%u add=%" PRIu64 " carry=%.4f credit=%" PRIu64 " cap=%" PRIu64 " w=%" PRIu64,
-                               sloPhase ? "SLO" : "BE", (unsigned)kv.first, add, acc.carry, acc.credit, acc.creditCap, acc.weight);
+                               "refill-SLO: uid=%u add=%" PRIu64 " carry=%.4f credit=%" PRIu64 " cap=%" PRIu64 " w=%" PRIu64,
+                               (unsigned)kv.first, add, acc.carry, acc.credit, acc.creditCap, acc.weight);
                     if ((unsigned)kv.first == 1001) add1001 += add;
                     if ((unsigned)kv.first == 1002) add1002 += add;
                 }
-                consumed += static_cast<double>(add);
             }
-            return consumed; // pages consumed in this phase
-        };
+        } else {
+            // 沒有 SLO 活躍者：全部配額可用於 BE
+            spillToBE = phaseBudget;
+        }
 
-        // SLO 先分配
-        double usedSLO = alloc_share(true, budget);
-        remaining = budget - usedSLO;
-        // 剩餘給 BE（work-conserving）
-        if (remaining > 0.0) {
-            double usedBE = alloc_share(false, remaining);
-            (void)usedBE;
+        // 將 SLO cap 溢出的部分給 BE（work-conserving）
+        if (spillToBE > 0.0 && activeWBE > 0) {
+            for (auto &kv : users) {
+                auto &acc = kv.second;
+                if (!acc.isActive || acc.isSLO) continue;
+
+                double exact   = spillToBE * (static_cast<double>(acc.weight) / static_cast<double>(activeWBE));
+                double sum     = exact + acc.carry;
+                uint64_t target   = static_cast<uint64_t>(sum);
+                uint64_t headroom = (acc.credit >= acc.creditCap) ? 0ULL : (acc.creditCap - acc.credit);
+                uint64_t add      = (target > headroom) ? headroom : target;
+                acc.carry  = sum - static_cast<double>(add);
+
+                acc.credit += add;
+                acc.lastRefillTick = lastGlobalRefillTick_;
+
+                if (add) {
+                    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                               "refill-BE: uid=%u add=%" PRIu64 " carry=%.4f credit=%" PRIu64 " cap=%" PRIu64 " w=%" PRIu64,
+                               (unsigned)kv.first, add, acc.carry, acc.credit, acc.creditCap, acc.weight);
+                }
+            }
         }
 
         // 低噪音彙總：關心 1001/1002 的相位配額與目前 credit（若不存在則 0）

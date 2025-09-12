@@ -48,7 +48,10 @@ class AbstractSubsystem : public StatObject {
   virtual uint32_t validNamespaceCount() = 0;
   
   // Credit-aware scheduling interface
+  // Check if the subsystem can serve a request for the given UID.
+  // Overload with and without an explicit resource requirement (e.g., pages).
   virtual bool canServe(uint32_t uid) const = 0;
+  virtual bool canServe(uint32_t uid, size_t need) const = 0;
 };
 
 }  // namespace NVMe
