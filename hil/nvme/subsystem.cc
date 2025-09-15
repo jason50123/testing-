@@ -1451,6 +1451,17 @@ bool Subsystem::canServe(uint32_t uid, size_t need) const {
   return result;
 }
 
+uint32_t Subsystem::getNamespaceLbaSize(uint32_t nsid) const {
+  for (auto ns : lNamespaces) {
+    if (ns && ns->getNSID() == nsid) {
+      auto *info = ns->getInfo();
+      if (info && info->lbaSize) return info->lbaSize;
+    }
+  }
+  // Fallback to common 4KiB if unknown
+  return 4096u;
+}
+
 }  // namespace NVMe
 
 }  // namespace HIL

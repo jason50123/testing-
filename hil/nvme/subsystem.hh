@@ -89,6 +89,9 @@ class Subsystem : public AbstractSubsystem {
   bool canServe(uint32_t uid) const;
   bool canServe(uint32_t uid, size_t need) const;
 
+  // Helper: query namespace LBA size (bytes) by NSID; returns 4096 if not found
+  uint32_t getNamespaceLbaSize(uint32_t nsid) const;
+
   void getStatList(std::vector<Stats> &, std::string) override;
   void getStatValues(std::vector<double> &) override;
   void resetStatValues() override;

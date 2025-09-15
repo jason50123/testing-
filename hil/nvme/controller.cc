@@ -1633,11 +1633,16 @@ void Controller::handleRequest(uint64_t now) {
       // Bootstrap: allow the very first pick for a user unconditionally
       bool isFirstPick = bootstrappedUsers.insert(uid).second;
 
-      // Peek the front request to compute actual need (in LBAs)
+      // Peek the front request to compute actual need in scheduler pages (4KiB)
       const SQEntryWrapper &front = userQueue.front();
       // NVMe nlb field: lower 16 bits of dword12 + 1
       uint16_t nlb = (front.entry.dword12 & 0xFFFF) + 1;
-      size_t needPages = static_cast<size_t>(nlb); // assume 1 LBA == 1 page for 4K
+      uint32_t nsid = front.entry.namespaceID;
+      // Convert LBA blocks to bytes using real namespace LBA size, then to 4KiB pages
+      uint32_t lbaSz = pSubsystem->getNamespaceLbaSize(nsid);
+      uint64_t needBytes = static_cast<uint64_t>(nlb) * static_cast<uint64_t>(lbaSz);
+      size_t needPages = static_cast<size_t>((needBytes + 4096 - 1) / 4096);
+      if (needPages == 0) needPages = 1; // safety
 
       // Check if this user can be served (has enough credit for this request or is new user)
       if (isFirstPick || pSubsystem->canServe(uid, needPages)) {
@@ -1686,8 +1691,17 @@ void Controller::handleRequest(uint64_t now) {
   bool hasMoreWork = false;
   for (const auto &kv : lSQByUser) {
     if (!kv.second.empty()) {
+      debugprint(LOG_HIL_NVME, "HASWORK | UID %u has %zu requests", kv.first, kv.second.size());
       hasMoreWork = true;
       break;
+    }
+  }
+  
+  // If no work found, log all queue states for debugging
+  if (!hasMoreWork && !lSQByUser.empty()) {
+    debugprint(LOG_HIL_NVME, "NOWORK | All queues empty: total_users=%zu", lSQByUser.size());
+    for (const auto &kv : lSQByUser) {
+      debugprint(LOG_HIL_NVME, "NOWORK | UID %u: queue_size=%zu", kv.first, kv.second.size());
     }
   }
 

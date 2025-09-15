@@ -46,6 +46,7 @@ class AbstractSubsystem : public StatObject {
   virtual void submitCommand(SQEntryWrapper &, RequestFunction) = 0;
   virtual void getNVMCapacity(uint64_t &, uint64_t &) = 0;
   virtual uint32_t validNamespaceCount() = 0;
+  virtual uint32_t getNamespaceLbaSize(uint32_t nsid) const = 0;
   
   // Credit-aware scheduling interface
   // Check if the subsystem can serve a request for the given UID.
