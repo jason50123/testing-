@@ -58,9 +58,21 @@ class CreditScheduler : public Scheduler
     // ★ NEW: ICL Deferred Execution Support
     // These methods support strict credit control for ISC tasks via ICL
     uint64_t predictICLLatency(const ICL::Request& req, uint64_t tick);
-    void submitICLDeferred(const ICL::Request& req, uint32_t uid, 
+    void submitICLDeferred(const ICL::Request& req, uint32_t uid,
                           uint64_t tick, uint64_t latency, uint64_t pages);
     void processDeferredICL(uint64_t now);
+
+    // ★ NEW: Non-blocking ISC Request Queue Support
+    // These methods implement the new architecture for ISC credit control
+    bool submitISCRequest(uint32_t uid, uint64_t pages, void* iscContext);
+    void processISCRequests(uint64_t currentTick);
+    void executeISCRequest(void* iscContext, uint64_t executionTick);
+    uint64_t predictISCLatency(uint64_t pages, uint64_t waitStartTime);
+    
+    // Ensure a user is active and the refill timer is started
+    void ensureActiveUser(uint32_t uid);
+    // Expose scheduler refill period (ticks)
+    uint64_t getPeriodTicks() const { return periodTicks_; }
     
     // （選用）小工具：若你要在別處查詢/扣款
     void     chargeUserCredit(uint32_t uid, uint64_t pages);
@@ -156,6 +168,16 @@ class CreditScheduler : public Scheduler
         uint64_t deferTime = 0;
     };
     std::queue<DeferredICLRequest> deferredICL_;
+
+    // ---- Non-blocking ISC Request Queue ----
+    struct ISCDeferredRequest {
+        uint32_t uid;
+        uint64_t pagesNeeded;
+        void* iscContext;       // Points to ISCRequestContext from FTL layer
+        uint64_t submitTick;    // When request was submitted
+        uint64_t estimatedLatency; // Predicted processing latency
+    };
+    std::queue<ISCDeferredRequest> deferredISCRequests_;
 
     // ------------------------------------------------------------
     // 核心流程

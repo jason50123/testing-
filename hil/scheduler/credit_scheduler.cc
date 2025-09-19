@@ -10,9 +10,11 @@
 #include "icl/icl.hh"           // pICL->read/write(...)
 #include "sim/simulator.hh"     // allocate/schedule/deschedule/scheduled/getTick
 #include "sim/trace.hh"         // debugprint, LOG_HIL_CREDIT_SCHEDULER
+#include "isc/sims/ftl.hh"      // For ISCRequestContext
 #include <algorithm>            // std::min
 #include <cstdio>
 #include <inttypes.h>
+#include <map>                  // std::map
 
 namespace SimpleSSD { namespace HIL {
 
@@ -168,6 +170,30 @@ void CreditScheduler::processEvent(uint64_t now)
     SimpleSSD::schedule(refillEvent, lastGlobalRefillTick_);
 }
 
+void CreditScheduler::ensureActiveUser(uint32_t uid)
+{
+    auto &acc = getOrCreateUser(uid);
+    if (!acc.isActive) {
+        acc.isActive       = true;
+        acc.credit         = 0;
+        acc.idlePeriods    = 0;
+        acc.lastRefillTick = SimpleSSD::getTick();
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "ensureActiveUser: user[%u] activated at tick=%" PRIu64,
+                   uid, acc.lastRefillTick);
+
+        if (!timerStarted) {
+            auto first = SimpleSSD::getTick() + periodTicks_;
+            lastGlobalRefillTick_ = first;
+            debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                       "ensureActiveUser: starting timer, first refill at tick=%" PRIu64,
+                       first);
+            SimpleSSD::schedule(refillEvent, first);
+            timerStarted = true;
+        }
+    }
+}
+
 // ---- 外部登記 ISC 延遲（只等信用 -> 扣款 -> 呼叫 resume()）----
 void CreditScheduler::submitISCDeferred(uint32_t uid, uint64_t pages, void* ctx,
                                         void (*cb)(void*, uint64_t))
@@ -233,23 +259,64 @@ void CreditScheduler::tick(Tick &now)
         double spillToBE = 0.0;
 
         if (activeWSLO > 0) {
+            double totalSLOSpill = 0.0;  // 收集SLO內部spillover
+            std::map<uint32_t, uint64_t> pendingAdd;
+            std::map<uint32_t, double> pendingCarry;
+
+            // 第一輪：正常分配，收集SLO內部的spillover
             for (auto &kv : users) {
                 auto &acc = kv.second;
                 if (!acc.isActive || !acc.isSLO) continue;
 
-                double exact   = phaseBudget * (static_cast<double>(acc.weight) / static_cast<double>(activeWSLO));
-                double sum     = exact + acc.carry;
-                uint64_t target   = static_cast<uint64_t>(sum);   // 本期欲發放的整數頁
+                double exact = phaseBudget * (static_cast<double>(acc.weight) / static_cast<double>(activeWSLO));
+                double sum = exact + acc.carry;
+                uint64_t target = static_cast<uint64_t>(sum);
                 uint64_t headroom = (acc.credit >= acc.creditCap) ? 0ULL : (acc.creditCap - acc.credit);
-                uint64_t add      = (target > headroom) ? headroom : target;
+                uint64_t add = (target > headroom) ? headroom : target;
+
+                pendingAdd[kv.first] = add;
 
                 if (headroom < target) {
-                    spillToBE += (sum - static_cast<double>(add));
-                    acc.carry  = 0.0;  // cap 狀態不可累積小數
+                    // 收集SLO內部spillover，不要立即給BE
+                    totalSLOSpill += (sum - static_cast<double>(add));
+                    pendingCarry[kv.first] = 0.0;
                 } else {
-                    acc.carry  = sum - static_cast<double>(add);
+                    pendingCarry[kv.first] = sum - static_cast<double>(add);
                 }
+            }
 
+            // 第二輪：將SLO spillover重新分配給其他SLO用戶
+            if (totalSLOSpill > 0.0) {
+                for (auto &kv : users) {
+                    auto &acc = kv.second;
+                    if (!acc.isActive || !acc.isSLO) continue;
+
+                    uint64_t currentPending = pendingAdd[kv.first];
+                    uint64_t headroom = (acc.credit + currentPending >= acc.creditCap) ?
+                                       0ULL : (acc.creditCap - acc.credit - currentPending);
+                    if (headroom > 0) {
+                        // 按權重比例重新分配spillover給其他SLO用戶
+                        double extraShare = totalSLOSpill * (static_cast<double>(acc.weight) / static_cast<double>(activeWSLO));
+                        uint64_t extraAdd = static_cast<uint64_t>(extraShare);
+                        extraAdd = (extraAdd > headroom) ? headroom : extraAdd;
+
+                        pendingAdd[kv.first] += extraAdd;
+                        totalSLOSpill -= extraAdd;
+
+                        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                                   "refill-SLO-extra: uid=%u extraAdd=%" PRIu64 " remainSpill=%.2f",
+                                   (unsigned)kv.first, extraAdd, totalSLOSpill);
+                    }
+                }
+            }
+
+            // 第三輪：實際分配credit並記錄統計
+            for (auto &kv : users) {
+                auto &acc = kv.second;
+                if (!acc.isActive || !acc.isSLO) continue;
+
+                uint64_t add = pendingAdd[kv.first];
+                acc.carry = pendingCarry[kv.first];
                 acc.credit += add;
                 acc.lastRefillTick = lastGlobalRefillTick_;
 
@@ -261,6 +328,9 @@ void CreditScheduler::tick(Tick &now)
                     if ((unsigned)kv.first == 1002) add1002 += add;
                 }
             }
+
+            // 最後才把真正無法在SLO內分配的給BE
+            spillToBE = totalSLOSpill;
         } else {
             // 沒有 SLO 活躍者：全部配額可用於 BE
             spillToBE = phaseBudget;
@@ -359,7 +429,10 @@ void CreditScheduler::tick(Tick &now)
     }
     
     // (2.5) 處理延遲的 ICL 請求 - 已移除，改為FTL層直接執行
-    
+
+    // ★ (2.6) NEW: 處理Non-blocking ISC Request Queue
+    processISCRequests(now);
+
     // (3) 真正 RR 交錯派發：每輪最多派發 1 筆，再從 lastChosenUid 的下一位重啟
     if (!users.empty()) {
         const size_t MAX_DISPATCH_PER_TICK = 4096; // 安全上限，避免無窮迴圈
@@ -468,7 +541,7 @@ CreditScheduler::getOrCreateUser(uint32_t uid)
     UserAccount acc;
     acc.weight        = (uid == 1002 ? 7 : uid == 1001 ? 3 : 1); // 範例：依 UID 給不同權重
     acc.isSLO         = (uid == 1001 || uid == 1002);            // 1001/1002 視為 SLO，其他（如 1003）為 BE
-    acc.creditCap     = static_cast<uint64_t>(pagesPerPeriod_ * 500); // 500 periods 緩衝，避免cap限制
+    acc.creditCap     = static_cast<uint64_t>(pagesPerPeriod_ * 2000); // 2000 periods 緩衝，避免cap限制過嚴
     if (acc.creditCap < 50) acc.creditCap = 50;
 
     users.emplace(uid, acc);
@@ -799,6 +872,158 @@ void CreditScheduler::processDeferredICL(uint64_t) {
     
     // 將仍無法執行的請求放回佇列
     deferredICL_ = std::move(remainingRequests);
+}
+
+// ============================================================================
+// ★ NEW: Non-blocking ISC Request Queue Implementation
+// ============================================================================
+
+bool CreditScheduler::submitISCRequest(uint32_t uid, uint64_t pages, void* iscContext) {
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "submitISCRequest: ENTRY uid=%u pages=%lu ctx=%p",
+               uid, pages, iscContext);
+
+    if (!iscContext) {
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "submitISCRequest: ERROR - null context!");
+        return false;
+    }
+
+    // 確保用戶已啟動，並且計時器在跑（供ISC路徑使用）
+    ensureActiveUser(uid);
+    auto &acc = getOrCreateUser(uid);
+
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "submitISCRequest: uid=%u has credit=%lu, needs=%lu",
+               uid, acc.credit, pages);
+
+    if (acc.credit >= pages) {
+        // ★ Case 1: 有足夠credit - 立即執行
+        acc.credit -= pages;
+        acc.totalConsumed += pages;
+        acc.consumedISC += pages;
+
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "ISC-immediate: uid=%u pages=%lu credit-left=%lu, executing now",
+                   uid, pages, acc.credit);
+
+        // 立即執行，時間就是當前時間
+        uint64_t executionTick = getTick();
+        executeISCRequest(iscContext, executionTick);
+        return true;
+
+    } else {
+        // ★ Case 2: Credit不足 - 進入deferred queue
+        ISCDeferredRequest deferred{
+            .uid = uid,
+            .pagesNeeded = pages,
+            .iscContext = iscContext,
+            .submitTick = getTick(),
+            .estimatedLatency = predictISCLatency(pages, getTick())
+        };
+
+        deferredISCRequests_.push(deferred);
+
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "ISC-deferred: uid=%u pages=%lu queue_size=%zu estimated_wait=%lu",
+                   uid, pages, deferredISCRequests_.size(), deferred.estimatedLatency);
+
+        return true; // 成功提交到queue，非阻塞
+    }
+}
+
+void CreditScheduler::processISCRequests(uint64_t currentTick) {
+    std::queue<ISCDeferredRequest> remainingRequests;
+
+    while (!deferredISCRequests_.empty()) {
+        ISCDeferredRequest req = deferredISCRequests_.front();
+        deferredISCRequests_.pop();
+
+        auto &acc = getOrCreateUser(req.uid);
+
+        if (acc.credit >= req.pagesNeeded) {
+            // ★ Credit現在足夠 - 執行請求
+            acc.credit -= req.pagesNeeded;
+            acc.totalConsumed += req.pagesNeeded;
+            acc.consumedISC += req.pagesNeeded;
+
+            // ★ 關鍵：計算包含等待時間的執行時間
+            uint64_t waitTime = currentTick - req.submitTick;
+            uint64_t executionTick = req.submitTick + waitTime;
+
+            debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                       "ISC-resume: uid=%u pages=%lu waited=%lu_ticks exec_at=%lu",
+                       req.uid, req.pagesNeeded, waitTime, executionTick);
+
+            executeISCRequest(req.iscContext, executionTick);
+
+        } else {
+            // ★ 仍無足夠credit - 放回queue繼續等待
+            remainingRequests.push(req);
+        }
+    }
+
+    deferredISCRequests_ = std::move(remainingRequests);
+}
+
+void CreditScheduler::executeISCRequest(void* iscContext, uint64_t executionTick) {
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "executeISCRequest: ENTRY ctx=%p tick=%lu",
+               iscContext, executionTick);
+
+    if (!iscContext) {
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "executeISCRequest: ERROR - null context!");
+        return;
+    }
+
+    // ★ 將void*轉換回ISCRequestContext* (需要include FTL header)
+    auto* ctx = static_cast<SimpleSSD::ISC::SIM::ISCRequestContext*>(iscContext);
+
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "executeISCRequest: ctx converted successfully, about to call callback");
+
+    try {
+        // ★ 使用新的function pointer callback機制
+        if (ctx->callback) {
+            debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                       "executeISCRequest: calling callback with tick=%lu userData=%p",
+                       executionTick, ctx->callbackUserData);
+            ctx->callback(executionTick, ctx->callbackUserData);
+            debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                       "executeISCRequest: callback completed successfully");
+        } else {
+            debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                       "executeISCRequest: WARNING - callback is null!");
+        }
+    } catch (...) {
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "executeISCRequest: EXCEPTION caught during callback execution!");
+    }
+
+    // ★ 清理context資源
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "executeISCRequest: deleting context %p", ctx);
+    delete ctx;
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "executeISCRequest: context deleted, EXIT");
+}
+
+uint64_t CreditScheduler::predictISCLatency(uint64_t pages, uint64_t waitStartTime) {
+    (void)waitStartTime; // Suppress unused parameter warning
+
+    // 基於當前credit狀況預測等待時間
+    uint64_t refillPeriod = 10000000; // 10M ticks per refill cycle
+    uint64_t avgRefillAmount = 100;   // 平均每次refill的credit數量
+
+    // 估算需要多少refill cycles才能滿足請求
+    uint64_t estimatedCycles = (pages + avgRefillAmount - 1) / avgRefillAmount;
+    uint64_t estimatedWaitTime = estimatedCycles * refillPeriod;
+
+    // 基於當前queue長度調整
+    uint64_t queuePenalty = deferredISCRequests_.size() * refillPeriod / 2;
+
+    return estimatedWaitTime + queuePenalty;
 }
 
 

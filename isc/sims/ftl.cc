@@ -124,39 +124,37 @@ void FTL::read(void *buf, size_t ofs, size_t sz _ADD_SIM_PARAMS) {
   pr("Changed cReq: {slpn,nlp}={%lu,%lu} | ofs,len=%lu,%lu", cReq.range.slpn,
      cReq.range.nlp, cReq.offset, cReq.length);
 
-  // ★ STRICT Credit Control - 同步等待直到credit可用
+  // ★ Credit gate (blocking): ensure credit before proceeding
   if (gScheduler) {
-    uint64_t pages = cReq.range.nlp;  // Use logical pages from ICL request
+    uint64_t pages = cReq.range.nlp ? cReq.range.nlp : 1;  // at least 1 page
     auto *cs = dynamic_cast<SimpleSSD::HIL::CreditScheduler*>(gScheduler);
     if (cs) {
-      // ★ 同步等待直到有足夠credit
-      uint64_t waitStartTick = simTick;
-      uint32_t waitCycles = 0;
-      
-      while (!cs->checkCredit(hReq.userID, pages)) {
-        waitCycles++;
-        // 每次等待一個scheduler週期 (10M ticks)
-        simTick += 10000000;  // 等待下一個credit refill週期
-        
-        if (waitCycles % 100 == 0) {  // 每1000M ticks輸出一次等待狀態
-          pr("FTL: ISC task uid=%u waiting for credit, pages=%lu, waitCycles=%u", 
-             hReq.userID, pages, waitCycles);
+      if (hReq.userID == 0) {
+        // ★ Admin user (uid=0) bypass - 系統初始化不受credit限制
+        pr("FTL: Admin user (uid=0) bypass credit check - pages=%lu", pages);
+      } else {
+        // ★ 正常用戶走credit檢查流程
+        // 確保用戶與timer啟動
+        cs->ensureActiveUser(hReq.userID);
+
+        // 等待直到有足夠credit：推進模擬時間並觸發refill
+        uint64_t period = cs->getPeriodTicks();
+        if (period == 0) period = 10000000ULL; // 安全預設：10M ticks
+
+        size_t guard = 100000; // 防止無限迴圈
+        while (!cs->checkCredit(hReq.userID, pages) && guard--) {
+          // 推進時間到下一個可能的refill相位，並手動觸發一次補發處理
+          simTick += period;
+          cs->processEvent(simTick);
         }
-        
-        // 安全檢查：避免無限等待 (最多等待10秒模擬時間)
-        if (waitCycles > 1000) {
-          pr("FTL: WARNING - ISC task uid=%u exceeded max wait cycles, proceeding anyway", 
-             hReq.userID);
-          break;
+
+        // 最後一次檢查（保險），若仍不足則不阻塞避免卡死
+        if (cs->checkCredit(hReq.userID, pages)) {
+          cs->useCreditISC(hReq.userID, pages);
+        } else {
+          pr("FTL: WARNING credit gate not satisfied after waits, continue without charge (uid=%u pages=%lu)",
+             hReq.userID, pages);
         }
-      }
-      
-      // ★ 扣除credit並記錄等待時間
-      cs->useCreditISC(hReq.userID, pages);
-      if (waitCycles > 0) {
-        uint64_t waitTime = simTick - waitStartTick;
-        pr("FTL: ISC task uid=%u waited %u cycles (%lu ticks) for credit, pages=%lu", 
-           hReq.userID, waitCycles, waitTime, pages);
       }
     }
   }

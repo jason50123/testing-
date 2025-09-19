@@ -55,7 +55,9 @@ Ext4::Ext4(_SIM_PARAMS) {
   this->sb = this->getSuper(_sim_params);
   simApplyLatency(CPU::ISC__FSA__EXT4, CPU::ISC__INIT);
 
-  assert(this->sb);
+  if (!this->sb) {
+    panic("Ext4: superblock read failed (invalid magic or I/O)");
+  }
 
   // allocate inode cache
   ICacheNode::szVal =
@@ -186,6 +188,7 @@ Ext4::super_block *Ext4::getSuper(_SIM_PARAMS) {
     if (sb->s_magic != Ext4::SB_MAGIC_LE) {
       pr("Weird magic: %04X", sb->s_magic);
       free(sb);
+      return nullptr;
     }
     return sb;
   };
