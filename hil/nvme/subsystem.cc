@@ -64,9 +64,10 @@ static const std::set<uint64_t> needRecord({OPCODE_READ, OPCODE_WRITE,
                                             OPCODE_ISC_SET});
 
 static inline void do_record(uint64_t s, uint64_t ps, const char *type,
-                             uint64_t slba, uint64_t nlb, const char *b64data) {
-  printf("RECORD: %lu.%012lu %s 0x%012lx + 0x%lx %s\n", s, ps, type, slba, nlb,
-         b64data);
+                             uint64_t slba, uint64_t nlb, const char *b64data,
+                             uint32_t uid, uint32_t prio) {
+  printf("RECORD: %lu.%012lu %s 0x%012lx + 0x%lx %s %u %u\n", s, ps, type, slba, nlb,
+         b64data, uid, prio);
 }
 
 static inline void req_record(RecordTypes t, void *ioCtx, size_t lbaSize) {
@@ -103,7 +104,7 @@ static inline void req_record(RecordTypes t, void *ioCtx, size_t lbaSize) {
       strType = "??";
   }
 
-  do_record(time.sec, time.ps, strType, ioc->slba, ioc->nlb, data);
+  do_record(time.sec, time.ps, strType, ioc->slba, ioc->nlb, data, ioc->uid, ioc->prio);
   tobeRecorded.erase(todo);
 
   free(data);

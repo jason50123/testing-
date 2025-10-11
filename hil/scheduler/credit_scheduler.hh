@@ -6,6 +6,7 @@
 #include "sim/simulator.hh"      // SimpleSSD 的事件抽象（allocate/schedule/...）
 #include <unordered_map>
 #include <queue>
+#include <deque>  // Phase 2: for latSamples
 #include <vector>
 #include <cstdint>
 #include <cstddef>
@@ -79,24 +80,53 @@ class CreditScheduler : public Scheduler
     uint64_t getUserCredit(uint32_t uid) const;
     uint64_t getUserWeight(uint32_t uid) const;
 
+    // ---- Phase 2: SLO Configuration API ----
+    // 为用户设置 IOPS 目标 (4KiB 归一化)
+    void setUserIopsTarget(uint32_t uid, double iops);
+    // Phase 3: 为用户设置 Tail latency 目标
+    void setUserTailTarget(uint32_t uid, double percentile, uint64_t target_us);
+
   private:
     // ------------------------------------------------------------
     // 基本型別
     struct UserAccount {
+        // === 基础字段 (Phase 1) ===
         uint64_t   weight         = 1;
         uint64_t   creditCap      = 0;        // page
         uint64_t   credit         = 0;        // 可用 token（page）
         double     carry          = 0.0;      // 小數餘量累積
         uint64_t   totalConsumed  = 0;
-        uint64_t   consumedHost   = 0;        // ★ 新增：host 類 I/O 消耗
-        uint64_t   consumedISC    = 0;        // ★ 新增：ISC 類 I/O 消耗
-        bool       isSLO          = false;    // ★ 新增：是否屬於 SLO 組（true）或 BE 組（false）
+        uint64_t   consumedHost   = 0;        // ★ host 類 I/O 消耗
+        uint64_t   consumedISC    = 0;        // ★ ISC 類 I/O 消耗
+        bool       isSLO          = false;    // ★ 是否屬於 SLO 組（true）或 BE 組（false）
         bool       isActive       = false;
         uint64_t   lastRefillTick = 0;        // 上次補充時間（tick）
         uint32_t   idlePeriods    = 0;
-        uint64_t pendingGates = 0; 
+        uint64_t   pendingGates   = 0;
         std::queue<Request> queue;
-        std::queue<Request> queueISC; 
+        std::queue<Request> queueISC;
+
+        // === Phase 2: SLO 目标与测量字段 ===
+        enum class SLOMode {
+            NONE,         // 无 SLO (BE 用户)
+            IOPS_TARGET,  // IOPS 目标模式
+            TAIL_TARGET   // Tail latency 目标模式 (Phase 3)
+        };
+        SLOMode    sloMode        = SLOMode::NONE;
+
+        // IOPS 目标 (4KiB 归一化)
+        double     targetIOPS     = 0.0;      // 例: 18000.0 = 18K IOPS
+
+        // 测量窗口 (每秒统计)
+        uint64_t   winStartTick   = 0;        // 窗口起始时间
+        uint64_t   winHostPages   = 0;        // 本窗口完成的 Host pages
+        uint64_t   winHostIOs     = 0;        // 本窗口完成的 Host I/O 笔数
+
+        // Phase 3: Tail latency 保护 (预留)
+        double     tailPercentile = 0.99;     // p99
+        uint64_t   tailTargetUs   = 0;        // 微秒, 例: 2000 = 2ms
+        double     budgetBoost    = 1.0;      // 临时加码系数 (1.0-3.0)
+        std::deque<uint64_t> latSamples;      // 延迟样本 (ticks)
     };
 
     static constexpr uint32_t IdleGracePeriods = 100; // 增加寬限期以保持用戶在IO間隔期間active

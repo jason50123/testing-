@@ -62,15 +62,18 @@ HIL::HIL(ConfigReader &c) : conf(c), reqCount(0), lastScheduled(0) {
       break;
     case 1: //Credit
       // 動態 credit scheduler 參數：
-      // baseCreditRate: 200 pages/refill (適中的補充量)
-      // baseCreditCap: 1000 pages (基礎上限，會動態調整)  
-      // refillInterval: 25M ticks ≈ 0.5 秒 (合理的補充間隔)
-      // pScheduler = new CreditScheduler(pICL, /*rate*/200, /*cap*/1000, /*interval*/0);
+      // ★ CRITICAL FIX: 增加 period 長度從 10µs → 1ms，避免小數化導致比例失真
+      // periodTicks: 1ms = 1,000,000 ns = 1,000,000,000 ticks (at 1e12 ticks/sec)
+      // pagesPerPeriod = 80000 IOPS * 0.001 sec = 80 pages/period
+      // → SLO 3:7 分配: uid=1001=24 pages, uid=1002=56 pages (穩定整數分配)
+      //
+      // 之前 10µs period → 0.8 pages/period → 需要4-5期才累積1 page (抖動嚴重)
+      // 現在 1ms period → 80 pages/period → 每期都是數十 pages (比例穩定)
       pScheduler = new CreditScheduler(pICL,
-                                 10 * 1000000ULL,
-                                 1000000000000ULL);
+                                 1ULL * 1000000000ULL,  // 1ms period
+                                 1000000000000ULL);     // 1e12 ticks/sec
       currentSchedulerType = SchedulerType::CREDIT;
-      debugprint(LOG_HIL, "Use Dynamic CreditScheduler (cfg)");
+      debugprint(LOG_HIL, "Use Dynamic CreditScheduler (cfg) - Period: 1ms");
       break;
   }
   
@@ -136,10 +139,10 @@ void HIL::switchScheduler(SchedulerType type) {
       break;
     case SchedulerType::CREDIT:
       pScheduler = new CreditScheduler(pICL,
-                                 10 * 1000000ULL,
-                                 1000000000000ULL);     
-      gScheduler = pScheduler; 
-      pr("Switched to Dynamic Credit scheduler");
+                                 1ULL * 1000000000ULL,  // 1ms period (同上)
+                                 1000000000000ULL);
+      gScheduler = pScheduler;
+      pr("Switched to Dynamic Credit scheduler (Period: 1ms)");
       break;
     // case SchedulerType::FLIN:
     //   pScheduler = new FLINScheduler(1000000, 1000000, 100000, 500000);

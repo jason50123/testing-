@@ -1589,8 +1589,8 @@ void Controller::work() {
 }
 
 void Controller::handleRequest(uint64_t now) {
-  debugprint(LOG_HIL_NVME, "HANDLE_REQ | Start handleRequest, total users: %zu", rrUsers.size());
-  
+  // Removed: debugprint total users count to reduce log noise
+
   SQEntryWrapper *selectedRequest = nullptr;
   
   // First priority: Handle admin commands (uid=0) immediately
@@ -1697,11 +1697,12 @@ void Controller::handleRequest(uint64_t now) {
     }
   }
   
-  // If no work found, log all queue states for debugging
+  // Only log non-empty queues to reduce log noise
   if (!hasMoreWork && !lSQByUser.empty()) {
-    debugprint(LOG_HIL_NVME, "NOWORK | All queues empty: total_users=%zu", lSQByUser.size());
     for (const auto &kv : lSQByUser) {
-      debugprint(LOG_HIL_NVME, "NOWORK | UID %u: queue_size=%zu", kv.first, kv.second.size());
+      if (!kv.second.empty()) {
+        debugprint(LOG_HIL_NVME, "NOWORK | UID %u: queue_size=%zu", kv.first, kv.second.size());
+      }
     }
   }
 

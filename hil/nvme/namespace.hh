@@ -68,11 +68,12 @@ class IOContext : public RequestContext {
   uint64_t slba;
   uint64_t nlb;
   uint64_t tick;
-  
+
   uint32_t uid;
   uint32_t prio;
 
-  IOContext(RequestFunction &f, CQEntryWrapper &r) : RequestContext(f, r) {}
+  IOContext(RequestFunction &f, CQEntryWrapper &r)
+      : RequestContext(f, r), beginAt(0), slba(0), nlb(0), tick(0), uid(0), prio(0) {}
 };
 
 class CompareContext : public IOContext {

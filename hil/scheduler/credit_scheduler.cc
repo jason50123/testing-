@@ -215,6 +215,37 @@ void CreditScheduler::tick(Tick &now)
     if (inTick) return;
     inTick = true;
 
+    // === Phase 2: IOPS 测量窗口 (每秒统计) ===
+    static uint64_t lastStatTick = 0;
+    static bool initialized = false;
+    if (!initialized) {
+        lastStatTick = now;
+        initialized = true;
+    }
+
+    if (now - lastStatTick >= ticksPerSec_) {
+        double windowSec = (double)(now - lastStatTick) / (double)ticksPerSec_;
+
+        for (auto &kv : users) {
+            auto &acc = kv.second;
+            if (!acc.isActive || !acc.isSLO) continue;
+
+            // 计算实际 IOPS (4KiB 归一化)
+            double measuredIOPS = (double)acc.winHostPages / windowSec;
+
+            debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                       "IOPS-window: uid=%u target=%.0f measured=%.0f "
+                       "pages=%lu ios=%lu window=%.3fs",
+                       (unsigned)kv.first, acc.targetIOPS, measuredIOPS,
+                       acc.winHostPages, acc.winHostIOs, windowSec);
+
+            // 重置窗口
+            acc.winHostPages = 0;
+            acc.winHostIOs = 0;
+        }
+        lastStatTick = now;
+    }
+
     // (0) 先把 admin queue 派光
     size_t admin_dispatched = 0;
     while (!adminQueue.empty()) {
@@ -259,78 +290,116 @@ void CreditScheduler::tick(Tick &now)
         double spillToBE = 0.0;
 
         if (activeWSLO > 0) {
-            double totalSLOSpill = 0.0;  // 收集SLO內部spillover
-            std::map<uint32_t, uint64_t> pendingAdd;
+            // ★ Phase 2: Demand-Driven SLO Allocation (需求驱动分配)
+            // 根据 IOPS 目标计算需求，而非固定权重比例
+
+            // 计算周期时长 (秒)
+            double periodSec = static_cast<double>(periodTicks_) / static_cast<double>(ticksPerSec_);
+
+            // SLO 需求结构
+            struct SLODemand {
+                uint32_t uid;
+                uint64_t demand;     // 本期需要的 pages
+                uint64_t headroom;   // 可用空间 (cap - credit)
+                uint64_t grant;      // 实际分配量
+            };
+            std::vector<SLODemand> sloUsers;
+            uint64_t totalDemand = 0;
             std::map<uint32_t, double> pendingCarry;
 
-            // 第一輪：正常分配，收集SLO內部的spillover
+            // === 第一轮: 计算每个 SLO 用户的需求 ===
             for (auto &kv : users) {
                 auto &acc = kv.second;
                 if (!acc.isActive || !acc.isSLO) continue;
 
-                double exact = phaseBudget * (static_cast<double>(acc.weight) / static_cast<double>(activeWSLO));
-                double sum = exact + acc.carry;
-                uint64_t target = static_cast<uint64_t>(sum);
-                uint64_t headroom = (acc.credit >= acc.creditCap) ? 0ULL : (acc.creditCap - acc.credit);
-                uint64_t add = (target > headroom) ? headroom : target;
+                double demandRaw = 0.0;
 
-                pendingAdd[kv.first] = add;
+                if (acc.sloMode == UserAccount::SLOMode::IOPS_TARGET) {
+                    // IOPS 目标模式: targetIOPS * periodSec = 本期需求 pages
+                    demandRaw = acc.targetIOPS * periodSec;
 
-                if (headroom < target) {
-                    // 收集SLO內部spillover，不要立即給BE
-                    totalSLOSpill += (sum - static_cast<double>(add));
-                    pendingCarry[kv.first] = 0.0;
+                } else if (acc.sloMode == UserAccount::SLOMode::TAIL_TARGET) {
+                    // Tail 模式 (Phase 3): 使用权重比例 * budgetBoost
+                    demandRaw = phaseBudget * static_cast<double>(acc.weight) /
+                                static_cast<double>(activeWSLO) * acc.budgetBoost;
+
                 } else {
-                    pendingCarry[kv.first] = sum - static_cast<double>(add);
+                    // NONE 模式: 退化为权重分配 (兼容现有用户)
+                    demandRaw = phaseBudget * static_cast<double>(acc.weight) /
+                                static_cast<double>(activeWSLO);
                 }
+
+                // 考虑 carry 累积
+                double sum = demandRaw + acc.carry;
+                uint64_t target = static_cast<uint64_t>(sum);          // 向下取整
+                double fractional = sum - std::floor(sum);              // 小数部分
+
+                uint64_t headroom = (acc.credit >= acc.creditCap) ?
+                                   0 : (acc.creditCap - acc.credit);
+
+                sloUsers.push_back({kv.first, target, headroom, 0});
+                totalDemand += target;
+                pendingCarry[kv.first] = fractional;
+
+                debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                           "SLO-demand: uid=%u mode=%d demandRaw=%.2f target=%" PRIu64 " carry=%.4f",
+                           kv.first, static_cast<int>(acc.sloMode), demandRaw, target, fractional);
             }
 
-            // 第二輪：將SLO spillover重新分配給其他SLO用戶
-            if (totalSLOSpill > 0.0) {
-                for (auto &kv : users) {
-                    auto &acc = kv.second;
-                    if (!acc.isActive || !acc.isSLO) continue;
+            // === 第二轮: 根据总需求决定分配策略 ===
+            uint64_t totalGranted = 0;
+            uint64_t capacityInt = static_cast<uint64_t>(phaseBudget);
 
-                    uint64_t currentPending = pendingAdd[kv.first];
-                    uint64_t headroom = (acc.credit + currentPending >= acc.creditCap) ?
-                                       0ULL : (acc.creditCap - acc.credit - currentPending);
-                    if (headroom > 0) {
-                        // 按權重比例重新分配spillover給其他SLO用戶
-                        double extraShare = totalSLOSpill * (static_cast<double>(acc.weight) / static_cast<double>(activeWSLO));
-                        uint64_t extraAdd = static_cast<uint64_t>(extraShare);
-                        extraAdd = (extraAdd > headroom) ? headroom : extraAdd;
-
-                        pendingAdd[kv.first] += extraAdd;
-                        totalSLOSpill -= extraAdd;
-
-                        debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                                   "refill-SLO-extra: uid=%u extraAdd=%" PRIu64 " remainSpill=%.2f",
-                                   (unsigned)kv.first, extraAdd, totalSLOSpill);
-                    }
+            if (totalDemand <= capacityInt) {
+                // 情况A: 需求未满 → 满足所有 SLO，剩余给 BE
+                for (auto &sd : sloUsers) {
+                    sd.grant = std::min(sd.demand, sd.headroom);
+                    totalGranted += sd.grant;
                 }
+                spillToBE = static_cast<double>(capacityInt - totalGranted);
+
+                debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                           "SLO-satisfied: totalDemand=%" PRIu64 " <= capacity=%" PRIu64
+                           ", totalGranted=%" PRIu64 ", spillToBE=%.0f",
+                           totalDemand, capacityInt, totalGranted, spillToBE);
+
+            } else {
+                // 情况B: 需求超载 → 按比例缩放 SLO，BE 得 0
+                double scale = (totalDemand > 0) ?
+                              static_cast<double>(capacityInt) / static_cast<double>(totalDemand) : 1.0;
+
+                for (auto &sd : sloUsers) {
+                    uint64_t scaled = static_cast<uint64_t>(std::floor(sd.demand * scale));
+                    sd.grant = std::min(scaled, sd.headroom);
+                    totalGranted += sd.grant;
+                }
+                spillToBE = 0.0;
+
+                debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                           "SLO-overload: totalDemand=%" PRIu64 " > capacity=%" PRIu64
+                           ", scale=%.3f, totalGranted=%" PRIu64 ", BE gets 0",
+                           totalDemand, capacityInt, scale, totalGranted);
             }
 
-            // 第三輪：實際分配credit並記錄統計
-            for (auto &kv : users) {
-                auto &acc = kv.second;
-                if (!acc.isActive || !acc.isSLO) continue;
-
-                uint64_t add = pendingAdd[kv.first];
-                acc.carry = pendingCarry[kv.first];
-                acc.credit += add;
+            // === 第三轮: 实际分配 credit ===
+            for (auto &sd : sloUsers) {
+                auto &acc = users[sd.uid];
+                acc.credit += sd.grant;
+                acc.carry = pendingCarry[sd.uid];
                 acc.lastRefillTick = lastGlobalRefillTick_;
 
-                if (add) {
+                if (sd.grant > 0) {
                     debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                               "refill-SLO: uid=%u add=%" PRIu64 " carry=%.4f credit=%" PRIu64 " cap=%" PRIu64 " w=%" PRIu64,
-                               (unsigned)kv.first, add, acc.carry, acc.credit, acc.creditCap, acc.weight);
-                    if ((unsigned)kv.first == 1001) add1001 += add;
-                    if ((unsigned)kv.first == 1002) add1002 += add;
+                               "refill-SLO: uid=%u demand=%" PRIu64 " grant=%" PRIu64
+                               " carry=%.4f credit=%" PRIu64 " cap=%" PRIu64,
+                               sd.uid, sd.demand, sd.grant, acc.carry, acc.credit, acc.creditCap);
+
+                    if (sd.uid == 1001) add1001 += sd.grant;
+                    if (sd.uid == 1002) add1002 += sd.grant;
                 }
             }
 
-            // 最後才把真正無法在SLO內分配的給BE
-            spillToBE = totalSLOSpill;
+            // spillToBE 已在上面第二轮中计算完成
         } else {
             // 沒有 SLO 活躍者：全部配額可用於 BE
             spillToBE = phaseBudget;
@@ -523,11 +592,19 @@ void CreditScheduler::dispatchICL(const Request& req, Tick &t)
     debugprint(LOG_HIL_CREDIT_SCHEDULER,
                "ICL: t=%" PRIu64 " uid=%u op=%d len=%" PRIu64,
                (uint64_t)t, req.userID, int(req.op), (uint64_t)req.length);
-           
+
     switch (req.op) {
         case OpType::READ:  pICL->read (iclReq, t); break;
         case OpType::WRITE: pICL->write(iclReq, t); break;
         default:            /* 管理/ISC 可自行擴充 */  break;
+    }
+
+    // === Phase 2: 累积 Host I/O 统计 (用于 IOPS 测量窗口) ===
+    if (req.op == OpType::READ || req.op == OpType::WRITE) {
+        auto &acc = getOrCreateUser(req.userID);
+        uint64_t pages = (req.length + PageSz - 1) / PageSz;
+        acc.winHostPages += pages;
+        acc.winHostIOs += 1;
     }
 }
 
@@ -543,6 +620,23 @@ CreditScheduler::getOrCreateUser(uint32_t uid)
     acc.isSLO         = (uid == 1001 || uid == 1002);            // 1001/1002 視為 SLO，其他（如 1003）為 BE
     acc.creditCap     = static_cast<uint64_t>(pagesPerPeriod_ * 2000); // 2000 periods 緩衝，避免cap限制過嚴
     if (acc.creditCap < 50) acc.creditCap = 50;
+
+    // === Phase 2: 设置 SLO 目标 (Demo) ===
+    // 总目标 60K IOPS (3:7 比例)
+    if (uid == 1001) {
+        acc.sloMode = UserAccount::SLOMode::IOPS_TARGET;
+        acc.targetIOPS = 18000.0;  // 18K IOPS (30% of 60K)
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "SLO-init: uid=%u IOPS_TARGET=%.0f", uid, acc.targetIOPS);
+    } else if (uid == 1002) {
+        acc.sloMode = UserAccount::SLOMode::IOPS_TARGET;
+        acc.targetIOPS = 42000.0;  // 42K IOPS (70% of 60K)
+        debugprint(LOG_HIL_CREDIT_SCHEDULER,
+                   "SLO-init: uid=%u IOPS_TARGET=%.0f", uid, acc.targetIOPS);
+    } else {
+        acc.sloMode = UserAccount::SLOMode::NONE;  // BE 用户
+    }
+    acc.winStartTick = SimpleSSD::getTick();
 
     users.emplace(uid, acc);
 
@@ -1026,6 +1120,31 @@ uint64_t CreditScheduler::predictISCLatency(uint64_t pages, uint64_t waitStartTi
     return estimatedWaitTime + queuePenalty;
 }
 
+// ============================================================================
+// Phase 2: SLO Configuration API Implementation
+// ============================================================================
 
+void CreditScheduler::setUserIopsTarget(uint32_t uid, double iops) {
+    auto &acc = getOrCreateUser(uid);
+    acc.sloMode = UserAccount::SLOMode::IOPS_TARGET;
+    acc.targetIOPS = iops;
+    acc.winStartTick = SimpleSSD::getTick();
+
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "SLO-config: uid=%u mode=IOPS_TARGET target=%.0f IOPS",
+               uid, iops);
+}
+
+void CreditScheduler::setUserTailTarget(uint32_t uid, double percentile, uint64_t target_us) {
+    auto &acc = getOrCreateUser(uid);
+    acc.sloMode = UserAccount::SLOMode::TAIL_TARGET;
+    acc.tailPercentile = percentile;
+    acc.tailTargetUs = target_us;
+    acc.winStartTick = SimpleSSD::getTick();
+
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
+               "SLO-config: uid=%u mode=TAIL_TARGET p%.2f target=%luus",
+               uid, percentile, target_us);
+}
 
 }} // namespace SimpleSSD::HIL
