@@ -1,3 +1,4 @@
+#include <cmath>
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
@@ -31,7 +32,9 @@
 namespace SimpleSSD {
 namespace ISC {
 namespace SIM {
-  
+
+static constexpr double ISC_PAGE_FACTOR = 1.15;  // derived from 500MB/4610ms experiment
+
 using SimpleSSD::HIL::Request;   // for convenience
 
 
@@ -126,7 +129,11 @@ void FTL::read(void *buf, size_t ofs, size_t sz _ADD_SIM_PARAMS) {
 
   // ★ Credit gate (blocking): ensure credit before proceeding
   if (gScheduler) {
-    uint64_t pages = cReq.range.nlp ? cReq.range.nlp : 1;  // at least 1 page
+    uint64_t basePages = cReq.range.nlp ? cReq.range.nlp : 1;  // true number of LPNs
+    double weighted = static_cast<double>(basePages) * ISC_PAGE_FACTOR;
+    uint64_t pages =
+        static_cast<uint64_t>(std::ceil(weighted));  // effective credit charge
+    if (pages == 0) pages = 1;
     auto *cs = dynamic_cast<SimpleSSD::HIL::CreditScheduler*>(gScheduler);
     if (cs) {
       if (hReq.userID == 0) {

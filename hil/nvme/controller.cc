@@ -1706,7 +1706,9 @@ void Controller::handleRequest(uint64_t now) {
     }
   }
 
-  if (hasMoreWork && requestCounter < maxRequest) {
+  // If we selected a request, and there's still more work, schedule the next immediate check.
+  // Otherwise, fall back to the longer work interval to avoid busy-waiting when everyone is out of credit.
+  if (selectedRequest && hasMoreWork && requestCounter < maxRequest) {
     schedule(requestEvent, now + requestInterval);
   }
   else {

@@ -616,36 +616,28 @@ CreditScheduler::getOrCreateUser(uint32_t uid)
     if (it != users.end()) return it->second;
 
     UserAccount acc;
-    acc.weight        = (uid == 1002 ? 7 : uid == 1001 ? 3 : 1); // 範例：依 UID 給不同權重
-    acc.isSLO         = (uid == 1001 || uid == 1002);            // 1001/1002 視為 SLO，其他（如 1003）為 BE
-    acc.creditCap     = static_cast<uint64_t>(pagesPerPeriod_ * 2000); // 2000 periods 緩衝，避免cap限制過嚴
+
+    // 所有使用者一視同仁：weight = 1，視為 best-effort
+    acc.weight = 1;
+    acc.isSLO = false;
+    acc.sloMode = UserAccount::SLOMode::NONE;
+    acc.targetIOPS = 0.0;
+    acc.tailPercentile = 0.0;
+    acc.tailTargetUs = 0;
+
+    // 仍保留 credit cap 來限制累積
+    acc.creditCap = static_cast<uint64_t>(pagesPerPeriod_ * 2000);
     if (acc.creditCap < 50) acc.creditCap = 50;
 
-    // === Phase 2: 设置 SLO 目标 (Demo) ===
-    // 总目标 60K IOPS (3:7 比例)
-    if (uid == 1001) {
-        acc.sloMode = UserAccount::SLOMode::IOPS_TARGET;
-        acc.targetIOPS = 18000.0;  // 18K IOPS (30% of 60K)
-        debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                   "SLO-init: uid=%u IOPS_TARGET=%.0f", uid, acc.targetIOPS);
-    } else if (uid == 1002) {
-        acc.sloMode = UserAccount::SLOMode::IOPS_TARGET;
-        acc.targetIOPS = 42000.0;  // 42K IOPS (70% of 60K)
-        debugprint(LOG_HIL_CREDIT_SCHEDULER,
-                   "SLO-init: uid=%u IOPS_TARGET=%.0f", uid, acc.targetIOPS);
-    } else {
-        acc.sloMode = UserAccount::SLOMode::NONE;  // BE 用户
-    }
     acc.winStartTick = SimpleSSD::getTick();
 
     users.emplace(uid, acc);
 
-    // 重新計算總權重（保留原本語義）
     totalWeight_ = 0;
-    for (auto it2 = users.begin(); it2 != users.end(); ++it2) {
-        totalWeight_ += it2->second.weight;
+    for (auto &kv : users) {
+        totalWeight_ += kv.second.weight;
     }
-    debugprint(LOG_HIL_CREDIT_SCHEDULER, 
+    debugprint(LOG_HIL_CREDIT_SCHEDULER,
                "user created: uid=%u weight=%" PRIu64 " totalWeight=%" PRIu64,
                uid, acc.weight, totalWeight_);
 

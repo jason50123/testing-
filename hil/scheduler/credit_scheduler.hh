@@ -134,7 +134,7 @@ class CreditScheduler : public Scheduler
     // ------------------------------------------------------------
     // 常數
     static constexpr uint64_t PageSz      = 4096;
-    static constexpr uint64_t SsdIops     = 80000;   // 根據實測調整
+    static constexpr uint64_t SsdIops     = 12000;   // 根據實測調整
     static constexpr uint64_t PagesPerSec = SsdIops; // 4K read
 
     // ------------------------------------------------------------
